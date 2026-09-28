@@ -34,6 +34,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ml-service:
+        condition: service_started
     ports:
       - "5000:5000"
     environment:
@@ -43,28 +45,21 @@ services:
       JWT_SECRET: super_secret_smart_campus_jwt_key_2026
       JWT_EXPIRES_IN: 7d
       FASTAPI_URL: http://ml-service:8000
-      USE_MOCK_AI: "true" # Switch to 'false' once ml-service is ready
+      USE_MOCK_AI: "false" # Switch to 'false' once ml-service is ready
       CORS_ORIGIN: http://localhost:5173,http://localhost:3000
     networks:
       - campus-network
 
-  # -------------------------------------------------------------
-  # 3. PYTHON FASTAPI ML SERVICE (Ready for your ML Teammate)
-  # -------------------------------------------------------------
-  # ml-service:
-  #   build:
-  #     context: ./ml-service
-  #     dockerfile: Dockerfile
-  #   container_name: smart-campus-ml
-  #   restart: unless-stopped
-  #   ports:
-  #     - "8000:8000"
-  #   environment:
-  #     PORT: 8000
-  #     OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-  #     GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-  #   networks:
-  #     - campus-network
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: smart-campus-ml
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    networks:
+      - campus-network
 
   # -------------------------------------------------------------
   # 4. FRONTEND REACT / VITE APP (Ready for Frontend Teammate)
