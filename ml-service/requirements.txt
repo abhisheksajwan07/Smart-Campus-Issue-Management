@@ -3,3 +3,5 @@ uvicorn==0.54.0
 scikit-learn==1.8.0
 joblib==1.5.3
 pandas
+matplotlib
+

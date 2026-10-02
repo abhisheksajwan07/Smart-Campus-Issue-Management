@@ -1,0 +1,8 @@
+Model,Accuracy (%),Precision (Macro),Recall (Macro),F1-Score (Macro),F1-Score (Weighted)
+Logistic Regression,100.0,100.0,100.0,100.0,100.0
+Multinomial Naive Bayes,100.0,100.0,100.0,100.0,100.0
+Support Vector Machine (Linear),100.0,100.0,100.0,100.0,100.0
+Support Vector Machine (RBF),100.0,100.0,100.0,100.0,100.0
+Random Forest,100.0,100.0,100.0,100.0,100.0
+K-Nearest Neighbors,100.0,100.0,100.0,100.0,100.0
+MLP Neural Network,100.0,100.0,100.0,100.0,100.0

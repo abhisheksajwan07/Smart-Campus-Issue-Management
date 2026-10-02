@@ -18,13 +18,32 @@ app = FastAPI(
 # Load pre-trained models from teammate
 BASE_DIR = Path(__file__).resolve().parent
 model_path = BASE_DIR / "model.pkl"
+if not model_path.exists():
+    model_path = BASE_DIR / "training" / "models" / "best_model.pkl"
+
+category_model_path = BASE_DIR / "category_model.pkl"
+if not category_model_path.exists():
+    category_model_path = BASE_DIR / "training" / "models" / "best_category_model.pkl"
+
 vectorizer_path = BASE_DIR / "vectorizer.pkl"
+if not vectorizer_path.exists():
+    vectorizer_path = BASE_DIR / "training" / "models" / "tfidf_vectorizer.pkl"
 
 if not model_path.exists() or not vectorizer_path.exists():
     raise RuntimeError("Model or vectorizer file not found in ml-service directory!")
 
 model = joblib.load(model_path)
+category_model = joblib.load(category_model_path) if category_model_path.exists() else None
 vectorizer = joblib.load(vectorizer_path)
+
+
+# Try loading SentenceTransformer for SBERT embeddings if available
+sbert_model = None
+try:
+    from sentence_transformers import SentenceTransformer
+    sbert_model = SentenceTransformer("all-MiniLM-L6-v2")
+except Exception:
+    sbert_model = None
 
 
 class Query(BaseModel):
@@ -35,48 +54,92 @@ class Query(BaseModel):
 
 def detect_category(text: str) -> tuple[str, float]:
     """
-    Classifies complaint category based on campus domain patterns.
-    (Electrical, Plumbing, IT / Network, Hostel / Mess, Academic, General)
+    Classifies complaint category using the trained ML model,
+    with smart fallbacks for campus infrastructure issues (electrical, plumbing).
     """
     lower = text.lower()
+
+    # 1. Immediate priority for unambiguous physical maintenance hazards
     if any(k in lower for k in ["fan", "light", "wire", "switch", "electric", "power", "plug", "socket", "spark", "voltage", "mcb", "fuse"]):
-        return "Electrical", 0.94
+        return "Electrical Maintenance", 0.95
     if any(k in lower for k in ["water", "tap", "leak", "pipe", "toilet", "washroom", "drain", "sink", "flush", "geyser", "tank"]):
-        return "Plumbing", 0.92
+        return "Plumbing & Sanitation", 0.95
+
+    # 2. ML Classifier for academic, IT, hostel, administrative, and student complaints
+    if category_model is not None and vectorizer is not None:
+        try:
+            cleaned = clean_text(text)
+            features = vectorizer.transform([cleaned])
+            if hasattr(category_model, "predict_proba"):
+                probs = category_model.predict_proba(features)[0]
+                idx = probs.argmax()
+                confidence = float(probs[idx])
+                if confidence >= 0.40:
+                    return str(category_model.classes_[idx]), round(confidence, 4)
+            else:
+                pred = category_model.predict(features)[0]
+                return str(pred), 0.95
+        except Exception:
+            pass
+
+    # 3. Domain keyword fallback
     if any(k in lower for k in ["wifi", "internet", "lan", "network", "portal", "website", "router", "login", "server", "access point"]):
-        return "IT / Network", 0.95
+        return "IT & Digital Services", 0.95
     if any(k in lower for k in ["mess", "food", "hostel", "warden", "room", "bed", "clean", "dustbin", "laundry", "caretaker"]):
-        return "Hostel / Mess", 0.89
-    if any(k in lower for k in ["exam", "marksheet", "attendance", "faculty", "timetable", "class", "professor", "grade", "syllabus"]):
-        return "Academic", 0.91
-    return "General", 0.70
+        return "Hostel & Accommodation", 0.89
+    if any(k in lower for k in ["exam", "marksheet", "admit", "revaluation", "grade"]):
+        return "Exams & Assessment", 0.95
+    if any(k in lower for k in ["attendance", "faculty", "timetable", "class", "professor", "syllabus", "degree", "branch"]):
+        return "Academic & Courses", 0.91
+    return "Campus Facilities & Maintenance", 0.70
+
 
 
 def generate_suggested_action(category: str, priority: str) -> str:
-    """Provides actionable resolution steps for campus maintenance staff"""
+    """Provides actionable resolution steps for campus maintenance and support staff"""
     p_upper = priority.upper()
-    if category == "Electrical" and p_upper in ["CRITICAL", "HIGH"]:
+    cat_lower = category.lower()
+
+    if "electr" in cat_lower and p_upper in ["CRITICAL", "HIGH"]:
         return "Isolate circuit breaker immediately and dispatch duty electrician."
-    if category == "Electrical":
+    if "electr" in cat_lower:
         return "Inspect capacitor, wiring, and switchboard terminals."
-    if category == "Plumbing" and p_upper in ["CRITICAL", "HIGH"]:
+    if "plumb" in cat_lower and p_upper in ["CRITICAL", "HIGH"]:
         return "Shut off main riser valve to prevent flooding and replace damaged pipe/fixture."
-    if category == "Plumbing":
+    if "plumb" in cat_lower:
         return "Inspect plumbing washers, clean aerator, and check line pressure."
-    if category == "IT / Network":
-        return "Reboot access point switch port and check RADIUS / DHCP server leases."
-    if category == "Academic":
-        return "Forward student ticket to Academic Examination & Records Cell."
-    if category == "Hostel / Mess":
-        return "Notify hostel supervisor for on-site inspection and room maintenance."
-    return "Conduct standard administrative inspection."
+    if "it" in cat_lower or "digital" in cat_lower:
+        return "Check network switches/AP DHCP leases and verify student LMS portal credentials."
+    if "exam" in cat_lower:
+        return "Forward ticket with urgency to Examination & Evaluation Controller Office."
+    if "acad" in cat_lower:
+        return "Forward student ticket to Academic Dean / Department Course Coordinator."
+    if "hostel" in cat_lower or "accomm" in cat_lower:
+        return "Notify hostel warden and caretaking staff for on-site room inspection."
+    if "intern" in cat_lower or "placement" in cat_lower:
+        return "Route application to Corporate Relations & Training/Placement Cell."
+    if "librar" in cat_lower:
+        return "Refer query to Central Library circulation and digital access desk."
+    if "transport" in cat_lower or "parking" in cat_lower:
+        return "Notify campus transport officer for parking/bus schedule review."
+    if "admin" in cat_lower or "document" in cat_lower:
+        return "Forward request to Registrar Office for student verification and document issuance."
+    return "Dispatch campus duty staff for standard on-site inspection and verification."
 
 
 def generate_embedding(text: str) -> List[float]:
     """
     Generates a normalized 384-dimensional float vector
     for semantic similarity and duplicate detection.
+    Uses SBERT all-MiniLM-L6-v2 if installed, or deterministic normalized vector.
     """
+    if sbert_model is not None:
+        try:
+            vec = sbert_model.encode(text, normalize_embeddings=True).tolist()
+            return [round(float(x), 6) for x in vec]
+        except Exception:
+            pass
+
     dims = 384
     # Deterministic semantic hash mapping
     h = sum(ord(c) * (i + 1) for i, c in enumerate(text[:80]))
@@ -91,8 +154,11 @@ def health():
         "status": "healthy",
         "service": "smart-campus-ml",
         "model_loaded": True,
+        "category_model_loaded": category_model is not None,
+        "sbert_loaded": sbert_model is not None,
         "classes": [str(c) for c in model.classes_],
     }
+
 
 
 # Backward-compatible endpoint for teammate's ML testing
