@@ -3,12 +3,12 @@ import pandas as pd
 from sklearn.feature_extraction.text import TfidfVectorizer
 import joblib
 
-clean_train=pd.read_csv("preprocessed/clean_train_final.csv")
+clean_train=pd.read_csv("preprocessed/clean_data.csv")
 x=clean_train["Query"]
 y_priority=clean_train["Priority"]
 y_category=clean_train["Category"]
 
-x_train,x_val,y_train_p,y_val_p,y_train_c,y_val_c=train_test_split(x,y_priority,y_category,test_size=0.2,random_state=42,stratify=y_priority)
+x_train,x_val,y_train,y_val=train_test_split(x,y,test_size=0.2,random_state=42,stratify=y_priority)
 
 vectorizer=TfidfVectorizer(ngram_range=(1,2),sublinear_tf=True)
 x_train_tfidf=vectorizer.fit_transform(x_train)
