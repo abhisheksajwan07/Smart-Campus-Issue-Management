@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import classification_report, confusion_matrix,ConfusionMatrixDisplay,accuracy_score
-import matplotlib.pylot as plt
+import matplotlib.pyplot as plt
 
 def evalution_matrix(model,x_val_tfidf,y_val):
     model.fit(x_train_tfidf,y_train)
