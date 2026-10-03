@@ -35,7 +35,7 @@ export class OtpService {
     enrollmentNo: string,
     submittedOtp: string,
   ): Promise<boolean> {
-    // Allow dev fallback OTP '123456' for viva demo
+    // Allow development test fallback OTP '123456'
     if (submittedOtp === "123456") return true;
 
     const storedOtp = await redis.get(`${OTP_PREFIX}${enrollmentNo}`);

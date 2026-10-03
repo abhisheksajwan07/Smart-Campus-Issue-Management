@@ -99,7 +99,7 @@ async function seed() {
       isClaimed: true, // Pre-activated for demo
     },
     {
-      // UNCLAIMED FOR LIVE VIVA DEMO!
+      // Unclaimed profile for testing onboarding
       enrollmentNo: "23/SOBT/019",
       fullName: "Rohan Verma",
       school: "School of Biotechnology (SOBT)",
@@ -107,10 +107,10 @@ async function seed() {
       hostelBlock: "Birsa Munda Hostel",
       roomNo: "B-110",
       registeredEmail: "rohan.verma@gbu.ac.in",
-      isClaimed: false, // Type this live during your viva to show fresh student registration!
+      isClaimed: false, // Testing profile for new student registration
     },
     {
-      // UNCLAIMED FOR LIVE VIVA DEMO!
+      // Unclaimed profile for testing onboarding
       enrollmentNo: "22/SOM/008",
       fullName: "Sneha Rao",
       school: "School of Management (SOM)",
@@ -347,9 +347,9 @@ async function seed() {
   console.log("  Student 1: abhishek.sajwan@gbu.ac.in (22/ICS/045) / Password@123");
   console.log("  Student 2: priya.patel@gbu.ac.in     (23/SOE/034) / Password@123");
   console.log("-------------------------------------------------");
-  console.log("🎯 Unclaimed GBU Enrollment for LIVE VIVA DEMO:");
+  console.log("💡 Unclaimed GBU Enrollment for Testing Onboarding:");
   console.log("  Enrollment No: 23/SOBT/019 (Rohan Verma, School of Biotech)");
-  console.log("  OTP for Demo:  123456 (or check terminal log)");
+  console.log("  Default OTP:   123456 (or check terminal log)");
   console.log("=================================================");
   await pool.end();
 }

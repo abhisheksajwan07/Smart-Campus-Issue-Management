@@ -446,9 +446,9 @@ export class ComplaintController {
   }
 
   /**
-   * THE VIVA WINNER: Human-in-the-Loop Override Endpoint
+   * Human-in-the-Loop Override Endpoint
    * Admin or Staff corrects an erroneous AI prediction.
-   * Recalculates SLA & Department routing automatically!
+   * Recalculates SLA & Department routing automatically.
    */
   static async overrideAi(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {

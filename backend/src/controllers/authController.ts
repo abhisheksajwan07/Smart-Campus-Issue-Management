@@ -188,7 +188,7 @@ export class AuthController {
           roomNo: rosterRecord.roomNo,
           maskedEmail: maskEmail(rosterRecord.registeredEmail),
           cooldownSeconds: 60,
-          // In development/viva mode, return devOtp so live demonstration never stalls
+          // In development mode, return devOtp so local testing never stalls
           devOtp: ENV.NODE_ENV === "development" ? otp : undefined,
         },
       });

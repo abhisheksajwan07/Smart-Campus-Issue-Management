@@ -122,8 +122,7 @@ export const complaints = pgTable(
     // 384-dimensional vector embedding for native pgvector cosine similarity search
     embedding: vector("embedding", { dimensions: 384 }),
 
-    // HUMAN OVERRIDE (CRITICAL VIVA KILLER FEATURE)
-
+    // Human-in-the-Loop Override Tracking
     finalCategory: varchar("final_category", { length: 100 }).notNull(),
     finalPriority: priorityLevelEnum("final_priority").notNull(),
     isAiOverridden: boolean("is_ai_overridden").default(false).notNull(),

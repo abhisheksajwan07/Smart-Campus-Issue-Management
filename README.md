@@ -137,14 +137,14 @@ npm run dev
 | **Student (Abhishek)** | `abhishek.sajwan@gbu.ac.in` (`22/ICS/045`) | `Password@123` | School of ICT, Birsa Munda Hostel (B-204) |
 | **Student (Priya)** | `priya.patel@gbu.ac.in` (`23/SOE/034`) | `Password@123` | School of Engineering, Mahamaya Hostel (C-302) |
 
-> 🎯 **Unclaimed Demo Enrollment for Live Viva:**
+> 💡 **Demo Student Enrollment for Testing:**
 > * **Enrollment No:** `23/SOBT/019` (Rohan Verma, School of Biotechnology, Birsa Munda B-110)
 > * **Default Dev OTP:** `123456` (or check terminal log)
-> * Enter this live during the presentation to demonstrate real GBU student verification and onboarding!
+> * Use this enrollment number to test the GBU student verification and onboarding workflow.
 
 ---
 
-## 🎯 Viva Killer Features Implemented
+## ⚡ Core Technical Features & Architecture
 
 ### 1. GBU CSMS / Samarth Enrollment Verification (Zero Fake Accounts)
 * Students do not register with arbitrary emails.
@@ -162,7 +162,7 @@ npm run dev
 * Refresh tokens are tracked in Redis and revoked upon logout with an instant blacklist.
 
 ### 3. Human-in-the-Loop AI Override
-When evaluators ask: *"What happens if the AI misclassifies a complaint?"*
+To prevent incorrect automated actions when machine learning models misclassify an issue:
 * Every complaint stores both `predicted_*` (AI history) and `final_*` (Human triage) fields:
   * `predicted_category` & `predicted_priority`
   * `final_category` & `final_priority`
@@ -193,9 +193,9 @@ When evaluators ask: *"What happens if the AI misclassifies a complaint?"*
 
 ---
 
-## 🤖 ML Microservice Reference Facts
+## 🤖 ML Microservice Architecture & Performance
 
-| Question | Viva Fact |
+| Parameter | Specification |
 | :--- | :--- |
 | **Embedding Model** | `all-MiniLM-L6-v2` (Sentence-Transformers, 384 dimensions) |
 | **Category Prediction** | Custom Logistic Regression + TF-IDF n-grams (1,2) with domain keyword rules for electrical/plumbing safety |
