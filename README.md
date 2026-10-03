@@ -1,6 +1,6 @@
-# Smart Campus Issue Management & Intelligence System — Backend
+# Smart Campus Issue Management & Intelligence System
 
-> High-throughput, production-ready Node.js + TypeScript backend with AI orchestration, automated department routing, SLA escalation management, human-in-the-loop override, semantic duplicate detection, and real-time Server-Sent Events (SSE).
+> Production-ready campus issue resolution platform with AI classification, automated department routing, SLA escalation management, human-in-the-loop override, semantic duplicate detection, and real-time Server-Sent Events (SSE).
 
 ---
 
