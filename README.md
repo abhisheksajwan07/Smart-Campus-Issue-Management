@@ -154,7 +154,7 @@ npm run dev
   3. 60-second cooldown is enforced via Redis.
   4. Upon OTP validation, their account is created and pre-linked to their school and hostel.
 
-### 2. httpOnly Cookie JWT Architecture (DevTinder Style)
+### 2. Secure httpOnly Cookie Authentication (XSS-Immune)
 * Access tokens are issued inside `httpOnly` secure cookies.
 * JavaScript cannot access the cookie, preventing XSS token-theft attacks.
 * The browser automatically attaches cookies to every request (`credentials: true`).

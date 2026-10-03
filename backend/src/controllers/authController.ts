@@ -55,13 +55,13 @@ function maskEmail(email: string): string {
 
 export class AuthController {
   /**
-   * DevTinder Cookie Architecture:
+   * Secure Cookie Architecture:
    * Sets httpOnly cookies on the response, keeping tokens safe from XSS attacks.
    */
   public static setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken?: string }): void {
     const isProd = ENV.NODE_ENV === "production";
 
-    // Set primary token cookie (DevTinder pattern)
+    // Set primary token cookie (httpOnly)
     res.cookie("token", tokens.accessToken, {
       httpOnly: true,
       secure: isProd,
@@ -341,7 +341,7 @@ export class AuthController {
 
       const tokens = await AuthController.issueTokens(tokenPayload);
 
-      // DevTinder Pattern: Set httpOnly cookie on response
+      // Set httpOnly cookie on response
       AuthController.setAuthCookies(res, tokens);
 
       res.status(201).json({
@@ -422,7 +422,7 @@ export class AuthController {
 
       const tokens = await AuthController.issueTokens(tokenPayload);
 
-      // DevTinder Pattern: Set httpOnly cookie on response
+      // Set httpOnly cookie on response
       AuthController.setAuthCookies(res, tokens);
 
       res.status(201).json({
@@ -507,7 +507,7 @@ export class AuthController {
 
       const tokens = await AuthController.issueTokens(tokenPayload);
 
-      // DevTinder Pattern: Set httpOnly cookie on response
+      // Set httpOnly cookie on response
       AuthController.setAuthCookies(res, tokens);
 
       res.status(200).json({
@@ -642,7 +642,7 @@ export class AuthController {
       // Token Rotation: issue brand new Access Token and Refresh Token
       const tokens = await AuthController.issueTokens(tokenPayload);
 
-      // DevTinder Pattern: Set rotated httpOnly cookies
+      // Set rotated httpOnly cookies
       AuthController.setAuthCookies(res, tokens);
 
       res.status(200).json({
@@ -662,7 +662,7 @@ export class AuthController {
 
   /**
    * User Logout: Revokes active Refresh Token in Redis and blacklists the current Access Token.
-   * DevTinder Pattern: Clears cookies from the browser.
+   * Clears cookies from the browser.
    */
   static async logout(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
@@ -676,7 +676,7 @@ export class AuthController {
         await redis.setex(`bl:${req.token}`, 15 * 60, "revoked");
       }
 
-      // DevTinder Pattern: Clear auth cookies on response
+      // Clear auth cookies on response
       AuthController.clearAuthCookies(res);
 
       res.status(200).json({

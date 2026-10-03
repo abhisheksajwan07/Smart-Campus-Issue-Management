@@ -9,7 +9,7 @@ export async function authenticateToken(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  // 1. Read token from cookies (DevTinder pattern)
+  // 1. Read token from httpOnly cookies
   let token = req.cookies?.token || req.cookies?.accessToken || null;
 
   // 2. Fallback to Authorization: Bearer <token> header
