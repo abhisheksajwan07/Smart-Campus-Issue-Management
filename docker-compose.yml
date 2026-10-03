@@ -11,7 +11,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: smart_campus
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,7 +23,26 @@ services:
       - campus-network
 
   # -------------------------------------------------------------
-  # 2. NODE.JS + TYPESCRIPT MAIN BACKEND
+  # 2. REDIS (Rate Limiting, OTP Storage, Login Guard)
+  # -------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: smart-campus-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - campus-network
+
+  # -------------------------------------------------------------
+  # 3. NODE.JS + TYPESCRIPT MAIN BACKEND
   # -------------------------------------------------------------
   backend:
     build:
@@ -34,6 +53,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
       ml-service:
         condition: service_started
     ports:
@@ -42,6 +63,7 @@ services:
       PORT: 5000
       NODE_ENV: production
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/smart_campus
+      REDIS_URL: redis://redis:6379
       JWT_SECRET: super_secret_smart_campus_jwt_key_2026
       JWT_EXPIRES_IN: 7d
       FASTAPI_URL: http://ml-service:8000
@@ -50,6 +72,9 @@ services:
     networks:
       - campus-network
 
+  # -------------------------------------------------------------
+  # 4. PYTHON FASTAPI ML SERVICE
+  # -------------------------------------------------------------
   ml-service:
     build:
       context: ./ml-service
@@ -62,7 +87,7 @@ services:
       - campus-network
 
   # -------------------------------------------------------------
-  # 4. FRONTEND REACT / VITE APP (Ready for Frontend Teammate)
+  # 5. FRONTEND REACT / VITE APP (Ready for Frontend Teammate)
   # -------------------------------------------------------------
   # frontend:
   #   build:
@@ -80,7 +105,10 @@ services:
 volumes:
   pgdata:
     driver: local
+  redisdata:
+    driver: local
 
 networks:
   campus-network:
     driver: bridge
+

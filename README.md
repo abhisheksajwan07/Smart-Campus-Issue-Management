@@ -1,37 +1,41 @@
-# Smart Campus Complaint Resolution & Intelligence System — Backend
+# Smart Campus Issue Management & Intelligence System — Backend
 
-> High-throughput, resilient Node.js + TypeScript backend with AI orchestration, automated department routing, SLA escalation management, human-in-the-loop override, and duplicate detection.
+> High-throughput, production-ready Node.js + TypeScript backend with AI orchestration, automated department routing, SLA escalation management, human-in-the-loop override, semantic duplicate detection, and real-time Server-Sent Events (SSE).
 
 ---
 
-## 🏗️ Architecture & Component Flow
+## 🏗️ System Architecture & Component Flow
 
 ```
-Student Portal (React) / Mobile
+React Frontend (Vite, port 5173)
              │
-             ▼  REST / HTTPS
-┌───────────────────────────────────────────────┐
-│              Express.js + TypeScript          │
-│                 MAIN BACKEND                  │
-│                                               │
-│  ├── JWT Authentication & Role Authorization  │
-│  ├── Complaint Lifecycle State Machine        │
-│  ├── Resilient AI Orchestrator (with fallback)│
-│  ├── Dynamic Department Routing Engine        │
-│  ├── SLA & Escalation Deadline Tracker        │
-│  └── Human-in-the-Loop Admin Override Tracker │
-└───────┬───────────────────────────────┬───────┘
-        │                               │
-        ▼ (try / catch fallback)        ▼
-┌───────────────────────┐       ┌───────────────────────┐
-│     Python FastAPI    │       │  PostgreSQL + Drizzle │
-│       ML Service      │       │                       │
-│                       │       │  • Complaints & Logs  │
-│  • Category Classifier│       │  • Users & Roles      │
-│  • Priority Classifier│       │  • Departments        │
-│  • Sentence Embeddings│       │  • 384-dim Embeddings │
-│  • LLM Summarizer     │       │  • AI & Override Diff │
-└───────────────────────┘       └───────────────────────┘
+             ▼  REST / SSE (httpOnly Cookies, port 5000)
+┌─────────────────────────────────────────────────────────────┐
+│                 Express.js + TypeScript                     │
+│                       MAIN BACKEND                          │
+│                                                             │
+│  ├── GBU CSMS / Samarth Enrollment Verification             │
+│  ├── httpOnly Cookie JWT Auth & Redis Session Revocation    │
+│  ├── Brute-Force Login Guard & Redis Rate Limiting          │
+│  ├── Complaint Lifecycle State Machine                      │
+│  ├── Resilient AI Orchestrator (try/catch Fallback)         │
+│  ├── Dynamic Department Routing Engine                      │
+│  ├── Priority SLA Engine (6h / 12h / 24h / 48h)             │
+│  ├── Human-in-the-Loop Admin Override Tracker               │
+│  ├── Semantic Duplicate Search (pgvector 384-dim Cosine)    │
+│  ├── Real-time Server-Sent Events (SSE) Broadcaster         │
+│  └── Local Multer Image Evidence Uploads (/uploads)         │
+└──────────────┬───────────────────────────────┬──────────────┘
+               │                               │
+       ┌───────┴────────────────────────┐      │
+       ▼ (try / catch fallback)         ▼      ▼
+┌──────────────────────────┐    ┌──────────────────────────┐    ┌──────────────────────────┐
+│   Python FastAPI (8000)  │    │   PostgreSQL (Drizzle)   │    │      Redis (6379)        │
+│   • Priority Classifier  │    │   • Users & GBU Roster   │    │   • 60s OTP Cooldown     │
+│   • Category Triage      │    │   • Complaints & Logs    │    │   • Brute-Force Lockout  │
+│   • all-MiniLM-L6-v2     │    │   • pgvector Extension   │    │   • Refresh Token Store  │
+│   • 384-dim Embeddings   │    │   • Audit Timeline       │    │   • Token Blacklist      │
+└──────────────────────────┘    └──────────────────────────┘    └──────────────────────────┘
 ```
 
 ---
@@ -41,20 +45,28 @@ Student Portal (React) / Mobile
 ```
 MINOR-PROJECT/
 ├── backend/                  # Node.js + TypeScript Express Backend
+│   ├── drizzle/              # Generated Drizzle database migrations
 │   ├── src/
-│   │   ├── config/           # Database & environment configs
-│   │   ├── controllers/      # Auth, Complaint, Department, Analytics controllers
-│   │   ├── db/               # Drizzle ORM schema & realistic seed script
-│   │   ├── middleware/       # JWT auth, role guard, zod validation, error handler
-│   │   ├── routes/           # REST API routes
-│   │   ├── services/         # AI orchestrator (resilient fallback), SLA, Routing, Similarity
+│   │   ├── config/           # Database, Redis, and environment configs
+│   │   ├── controllers/      # Auth, Complaint, Department, Analytics, Roster controllers
+│   │   ├── db/               # Drizzle schema (PostgreSQL + pgvector) and seed data
+│   │   ├── middleware/       # JWT cookie auth, role guards, zod validation, rate limiters
+│   │   ├── routes/           # REST endpoints (auth, complaints, admin, departments, etc.)
+│   │   ├── scripts/          # Calibrate similarity threshold & benchmark tools
+│   │   ├── services/         # AI orchestrator, SLA, Routing, Similarity, SSE, Email, OTP
 │   │   └── types/            # TypeScript interfaces & types
+│   ├── uploads/              # Local disk storage for complaint photos
 │   ├── Dockerfile            # Multi-stage production container build
-│   ├── .dockerignore
-│   ├── .env.example
-│   └── package.json
-├── docker-compose.yml        # Orchestrates Postgres (pgvector), Backend, and future ML/Frontend
-├── .dockerignore
+│   ├── package.json
+│   └── tsconfig.json
+├── ml-service/               # Python FastAPI microservice (Scikit-Learn + SBERT)
+│   ├── training/             # Model training pipelines, datasets, evaluation reports
+│   ├── main.py               # Exposes POST /analyze, POST /predict, and GET /health
+│   ├── model.pkl             # Trained Logistic Regression priority model (93.6% acc)
+│   ├── category_model.pkl    # Trained Logistic Regression category model
+│   └── vectorizer.pkl        # TF-IDF n-gram vectorizer
+├── docker-compose.yml        # Orchestrates Postgres (pgvector), Redis, Backend, & FastAPI
+├── smart-campus.postman_collection.json # Ready-to-import Postman test collection
 ├── .gitignore
 └── README.md
 ```
@@ -63,148 +75,166 @@ MINOR-PROJECT/
 
 ## 🚀 Quick Start Options
 
-### Option A: Run with Docker Compose (Recommended)
-Spins up PostgreSQL (with pgvector pre-installed) and the Backend in isolated containers:
+### Option A: Run Everything with Docker Compose (Recommended)
+
+Spins up PostgreSQL (`pgvector`), Redis, Node.js Backend, and FastAPI ML service in containers:
 ```bash
 docker compose up --build
 ```
-The backend will automatically wait for PostgreSQL to become healthy and start on `http://localhost:5000`.
+* **Backend API**: `http://localhost:5000`
+* **Health Check**: `http://localhost:5000/api/health`
+* **FastAPI Docs**: `http://localhost:8000/docs`
 
 ---
 
 ### Option B: Run Locally on Host Machine
 
-#### 1. Navigate to backend directory & install dependencies
+#### 1. Install Backend Dependencies
 ```bash
 cd backend
 npm install
 ```
 
-#### 2. Configure Environment (`backend/.env`)
-Verify `.env` has your local PostgreSQL credentials:
+#### 2. Configure Environment (`backend/.env` or `backend/.env.local`)
 ```env
 PORT=5000
 NODE_ENV=development
 DATABASE_URL=postgresql://postgres:postgres@localhost:5432/smart_campus
+REDIS_URL=redis://localhost:6379
+
 JWT_SECRET=super_secret_smart_campus_jwt_key_2026
+JWT_ACCESS_SECRET=smart-campus-jwt-access-secret-2026
+JWT_ACCESS_EXPIRES_IN=15m
+JWT_REFRESH_SECRET=smart-campus-jwt-refresh-secret-2026
+JWT_REFRESH_EXPIRES_IN=7d
+
 FASTAPI_URL=http://localhost:8000
-USE_MOCK_AI=true
+USE_MOCK_AI=false
+CORS_ORIGIN=http://localhost:5173,http://localhost:3000
 ```
 
-> **Note on `USE_MOCK_AI=true`**: The backend includes a built-in high-fidelity ML simulator. You and your frontend teammate can build and test immediately without being blocked while your ML teammate trains and serves the FastAPI model.
+> **Note on `USE_MOCK_AI`**: If set to `true`, the backend simulates AI classification without requiring FastAPI.
 
-#### 3. Push Schema to PostgreSQL
+#### 3. Push Database Schema & Seed Data
 ```bash
-npm run db:push
+npm run db:push     # Creates PostgreSQL tables & pgvector index
+npm run db:seed     # Seeds GBU departments, student roster, & demo complaints
 ```
 
-### 4. Seed Database with Realistic Demo Data
-```bash
-npm run db:seed
-```
-This populates:
-* 5 Campus Departments (`ELEC`, `PLUMB`, `IT`, `HOSTEL`, `GEN`)
-* 3 Default Users (Admin, Staff, Student)
-* 6 Realistic Complaints with AI analysis, duplicate pairs, and an AI override example!
-
-### 5. Start Development Server
+#### 4. Start Development Server
 ```bash
 npm run dev
 ```
-Server runs at: `http://localhost:5000`  
-Health check: `http://localhost:5000/api/health`
 
 ---
 
-## 👥 Default Demo Credentials
+## 👥 Verified Test Credentials
 
-| Role | Email | Password | Access Scope |
+| Role | Email / Enrollment | Password | Access Scope |
 | :--- | :--- | :--- | :--- |
-| **Admin** | `admin@campus.edu` | `Password@123` | Full access, AI override, Analytics dashboard |
-| **Staff (Electrical)** | `staff.elec@campus.edu` | `Password@123` | Electrical department triage & status update |
-| **Student (Aarav)** | `student@campus.edu` | `Password@123` | Submit complaints, track personal complaints |
-| **Student (Priya)** | `priya@campus.edu` | `Password@123` | Submit complaints, track personal complaints |
+| **Admin** | `admin@gbu.ac.in` | `Password@123` | Full access, AI override, Analytics, Roster management |
+| **Staff (Electrical)** | `staff.elec@gbu.ac.in` | `Password@123` | Electrical department triage & status management |
+| **Student (Abhishek)** | `abhishek.sajwan@gbu.ac.in` (`22/ICS/045`) | `Password@123` | School of ICT, Birsa Munda Hostel (B-204) |
+| **Student (Priya)** | `priya.patel@gbu.ac.in` (`23/SOE/034`) | `Password@123` | School of Engineering, Mahamaya Hostel (C-302) |
+
+> 🎯 **Unclaimed Demo Enrollment for Live Viva:**
+> * **Enrollment No:** `23/SOBT/019` (Rohan Verma, School of Biotechnology, Birsa Munda B-110)
+> * **Default Dev OTP:** `123456` (or check terminal log)
+> * Enter this live during the presentation to demonstrate real GBU student verification and onboarding!
 
 ---
 
 ## 🎯 Viva Killer Features Implemented
 
-### 1. Human-in-the-Loop AI Override
-When evaluators ask: *"What happens if the AI predicts the wrong category or priority?"*
-* Every complaint stores both `predicted_*` and `final_*` fields:
+### 1. GBU CSMS / Samarth Enrollment Verification (Zero Fake Accounts)
+* Students do not register with arbitrary emails.
+* Verification connects to the `gbu_student_roster` table (mirroring GBU ERP / Samarth eGov):
+  1. Student enters GBU Enrollment No (`22/ICS/045`).
+  2. Backend looks up student profile and sends an OTP to their official university email.
+  3. 60-second cooldown is enforced via Redis.
+  4. Upon OTP validation, their account is created and pre-linked to their school and hostel.
+
+### 2. httpOnly Cookie JWT Architecture (DevTinder Style)
+* Access tokens are issued inside `httpOnly` secure cookies.
+* JavaScript cannot access the cookie, preventing XSS token-theft attacks.
+* The browser automatically attaches cookies to every request (`credentials: true`).
+* Backwards compatible: fallback support for `Authorization: Bearer <token>` in Postman and mobile clients.
+* Refresh tokens are tracked in Redis and revoked upon logout with an instant blacklist.
+
+### 3. Human-in-the-Loop AI Override
+When evaluators ask: *"What happens if the AI misclassifies a complaint?"*
+* Every complaint stores both `predicted_*` (AI history) and `final_*` (Human triage) fields:
   * `predicted_category` & `predicted_priority`
   * `final_category` & `final_priority`
   * `is_ai_overridden` & `override_reason` & `overridden_by_id`
 * Admin/Staff can call `PATCH /api/complaints/:id/override`.
 * **Automatic recalculation**: Changing category re-routes the assigned department; changing priority recalculates the SLA deadline!
-* **Accuracy Metric**: The dashboard calculates `AI Acceptance Rate` live (`((total - overridden) / total) * 100`).
+* **Live KPI Metric**: Analytics dashboard displays `AI Acceptance Rate` (`((total - overridden) / total) * 100`).
 
-### 2. Graceful Fallback (Resilient Node Backend)
-If the Python ML service crashes, experiences OOM, or times out:
-* The complaint submission **never throws HTTP 500**.
-* Handled safely via a resilient `try / catch` fallback that assigns standard defaults and schedules manual review.
+### 4. Resilient AI Fallback (Zero HTTP 500)
+* If the FastAPI service is slow, offline, or out-of-memory, the Node backend catches errors gracefully.
+* Applies sensible campus defaults and queues tickets for staff review without dropping user submissions.
 
-### 3. Priority-Driven SLA & Escalation
-* **CRITICAL**: 6-hour deadline (e.g. electrical sparks, floods)
-* **HIGH**: 12-hour deadline (e.g. stopped fans, exam Wi-Fi outage)
-* **MEDIUM**: 24-hour deadline (e.g. standard leakage, minor fixture)
-* **LOW**: 48-hour deadline (e.g. repaint, minor squeak)
-* Automatically flags overdue complaints in real-time.
+### 5. Priority-Driven SLA & Escalation
+* **CRITICAL**: 6-hour deadline (e.g. electrical sparks, major pipe bursts)
+* **HIGH**: 12-hour deadline (e.g. non-working fans in summer, LMS outages)
+* **MEDIUM**: 24-hour deadline (e.g. leaking faucet, door latch repair)
+* **LOW**: 48-hour deadline (e.g. cosmetic paint, minor noise)
+* Automatically flags overdue tickets in real-time.
 
-### 4. Semantic Duplicate Detection
-* Calculates Cosine Similarity over 384-dimensional Sentence Transformer embeddings.
-* Immediately warns students and admins if a complaint is >80% similar to an existing open ticket (e.g., multiple students reporting the same fan in Room 204).
+### 6. Semantic Duplicate Detection via `pgvector`
+* Uses Sentence-Transformers **`all-MiniLM-L6-v2`** to generate 384-dimensional normalized vector embeddings.
+* Calculates Cosine Similarity directly in PostgreSQL using `pgvector`.
+* Flags duplicate complaints with >80% similarity (e.g. multiple students complaining about the same corridor light).
+
+### 7. Real-time Server-Sent Events (SSE)
+* Uses unidirectional SSE via `GET /api/complaints/stream` instead of heavy WebSockets.
+* Live dashboard updates when tickets are submitted, overridden, or resolved.
+
+---
+
+## 🤖 ML Microservice Reference Facts
+
+| Question | Viva Fact |
+| :--- | :--- |
+| **Embedding Model** | `all-MiniLM-L6-v2` (Sentence-Transformers, 384 dimensions) |
+| **Category Prediction** | Custom Logistic Regression + TF-IDF n-grams (1,2) with domain keyword rules for electrical/plumbing safety |
+| **Priority Prediction** | Custom Logistic Regression classifier (`model.pkl`) predicting HIGH, MEDIUM, LOW |
+| **Training Dataset** | 1,250 curated campus complaints across 9 categories with noise filtering (`clean_train_final.csv`) |
+| **Model Accuracy** | **93.6% Priority Accuracy** (93.6% Macro F1), **~99.7% Category Accuracy** evaluated via 80/20 train-test split |
 
 ---
 
 ## 📡 API Reference Summary
 
 ### Authentication (`/api/auth`)
-* `POST /api/auth/register` — Register new user
-* `POST /api/auth/login` — Login & receive JWT token
-* `GET /api/auth/me` — Get authenticated user details
+* `POST /api/auth/verify-enrollment` — Verifies GBU enrollment, returns profile, sends OTP
+* `POST /api/auth/resend-otp` — Resends OTP (with 60-second Redis cooldown)
+* `POST /api/auth/register-student` — Validates OTP, activates student account, sets `httpOnly` cookie
+* `POST /api/auth/register` — Standard registration for Admin / Staff
+* `POST /api/auth/login` — Authenticates credentials, sets `httpOnly` cookie & issues token
+* `POST /api/auth/refresh-token` — Rotates access & refresh tokens
+* `POST /api/auth/logout` — Revokes Redis session, blacklists token, clears cookies
+* `GET /api/auth/me` — Fetches current user profile & campus allocation
 
 ### Complaints (`/api/complaints`)
-* `POST /api/complaints` — Submit complaint (triggers AI analysis, SLA calculation, and routing)
-* `GET /api/complaints` — List complaints (filter by `status`, `priority`, `category`, `search`)
-* `GET /api/complaints/:id` — Full details + audit timeline + similar complaints
-* `PATCH /api/complaints/:id/status` — Update status (`SUBMITTED`, `IN_PROGRESS`, `RESOLVED`, etc.)
+* `POST /api/complaints` — Submit complaint (AI analysis, duplicate check, SLA calculation, auto-routing)
+* `GET /api/complaints` — List complaints with multi-criteria filtering (`status`, `priority`, `category`, `search`)
+* `GET /api/complaints/:id` — Complaint details, audit timeline, and duplicate matches
+* `GET /api/complaints/stream` — **Real-Time SSE Stream** broadcasting live updates
+* `PATCH /api/complaints/:id/status` — Update ticket progress (`SUBMITTED`, `IN_PROGRESS`, `RESOLVED`, etc.)
 * `PATCH /api/complaints/:id/override` — **Admin AI Override** (updates final fields, recalculates SLA & routing)
 
+### File Uploads (`/api/upload`)
+* `POST /api/upload` — Upload complaint photo evidence (Multer multipart form-data). Stored locally at `backend/uploads/`.
+
 ### Departments (`/api/departments`)
-* `GET /api/departments` — List departments with active complaint metrics
+* `GET /api/departments` — List departments with active ticket loads
 * `POST /api/departments` — Create department (Admin only)
 
 ### Analytics (`/api/analytics`)
 * `GET /api/analytics/dashboard` — KPI cards, AI Accuracy Rate, category/priority distributions, department workloads
 
----
-
-## 🤝 ML Teammate Contract (`POST /analyze`)
-Your Python ML teammate should implement this exact schema in FastAPI:
-
-**Request from Node:**
-```json
-{
-  "complaintId": "cmp_123",
-  "text": "Fan in room 204 stopped working yesterday.",
-  "location": "Room 204, Boys Hostel B"
-}
-```
-
-**Response to Node:**
-```json
-{
-  "category": {
-    "value": "Electrical",
-    "confidence": 0.94
-  },
-  "priority": {
-    "value": "HIGH",
-    "confidence": 0.89
-  },
-  "summary": "Ceiling fan in room 204 non-functional since yesterday.",
-  "suggestedAction": "Inspect capacitor and check switchboard wiring.",
-  "embedding": [0.0123, -0.0456, 0.0789, "...384 floats..."]
-}
-```
+### Admin & CSMS Roster (`/api/admin`)
+* `POST /api/admin/roster/bulk-upload` — Import student batches from CSMS / Samarth registry
+* `GET /api/admin/roster` — Search and inspect student roster records

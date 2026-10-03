@@ -15,13 +15,17 @@ export class RoutingService {
     if (cat.includes("plumb") || cat.includes("water") || cat.includes("tap") || cat.includes("drain") || cat.includes("toilet") || cat.includes("leak")) {
       return "PLUMB";
     }
-    if (cat.includes("it") || cat.includes("network") || cat.includes("wifi") || cat.includes("internet") || cat.includes("router") || cat.includes("lan") || cat.includes("server")) {
+    if (cat.includes("it") || cat.includes("network") || cat.includes("wifi") || cat.includes("internet") || cat.includes("router") || cat.includes("lan") || cat.includes("server") || cat.includes("digital")) {
       return "IT";
     }
-    if (cat.includes("hostel") || cat.includes("mess") || cat.includes("food") || cat.includes("room") || cat.includes("bed") || cat.includes("cleaning")) {
+    if (cat.includes("hostel") || cat.includes("mess") || cat.includes("food") || cat.includes("room") || cat.includes("bed") || cat.includes("cleaning") || cat.includes("accommod")) {
       return "HOSTEL";
     }
+    if (cat.includes("acad") || cat.includes("exam") || cat.includes("course") || cat.includes("grade") || cat.includes("mark") || cat.includes("attend") || cat.includes("admit") || cat.includes("library") || cat.includes("placement") || cat.includes("intern")) {
+      return "ACAD";
+    }
     return "GEN"; // Default to General Administration
+
   }
 
   /**

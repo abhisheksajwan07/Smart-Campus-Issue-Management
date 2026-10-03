@@ -1,6 +1,7 @@
 import { createApp } from "./app";
 import { ENV } from "./config/env";
 import { testDbConnection } from "./config/database";
+import { connectRedis } from "./config/redis";
 
 const app = createApp();
 
@@ -10,6 +11,7 @@ async function startServer() {
   console.log("=================================================");
   console.log(`Node Environment: ${ENV.NODE_ENV}`);
   console.log(`Target Port:      ${ENV.PORT}`);
+  console.log(`Redis Target:     ${ENV.REDIS_URL}`);
   console.log(`FastAPI Target:   ${ENV.FASTAPI_URL}`);
   console.log(`Mock AI Engine:   ${ENV.USE_MOCK_AI ? "ENABLED (Simulator Active)" : "DISABLED (Calling FastAPI)"}`);
   console.log("-------------------------------------------------");
@@ -20,6 +22,9 @@ async function startServer() {
     console.warn("⚠️  PostgreSQL connection could not be established immediately.");
     console.warn("   Verify DATABASE_URL in your .env file.");
   }
+
+  // Connect Redis (non-blocking — falls back to in-memory if unavailable)
+  await connectRedis();
 
   app.listen(ENV.PORT, () => {
     console.log(`🚀 Server listening on http://localhost:${ENV.PORT}`);

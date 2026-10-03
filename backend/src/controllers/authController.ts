@@ -3,10 +3,28 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { db } from "../config/database";
-import { users } from "../db/schema";
+import { redis } from "../config/redis";
+import { users, gbuStudentRoster } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { ENV } from "../config/env";
 import { AuthenticatedRequest, TokenPayload, UserRole } from "../types";
+import { OtpService } from "../services/otpService";
+import { LoginGuardService } from "../services/loginGuardService";
+import { EmailService } from "../services/emailService";
+
+export const verifyEnrollmentSchema = z.object({
+  enrollmentNo: z.string().min(3, "Enrollment number is required (e.g. 22/ICS/045)"),
+});
+
+export const resendOtpSchema = z.object({
+  enrollmentNo: z.string().min(3, "Enrollment number is required (e.g. 22/ICS/045)"),
+});
+
+export const registerStudentSchema = z.object({
+  enrollmentNo: z.string().min(3, "Enrollment number is required"),
+  otp: z.string().min(4, "Verification OTP is required"),
+  password: z.string().min(6, "Password must be at least 6 characters"),
+});
 
 export const registerSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -22,12 +40,342 @@ export const loginSchema = z.object({
   password: z.string().min(1, "Password is required"),
 });
 
+export const refreshTokenSchema = z.object({
+  refreshToken: z.string().min(10, "Refresh token is required").optional(),
+});
+
+function maskEmail(email: string): string {
+  const parts = email.split("@");
+  if (parts.length !== 2) return email;
+  const name = parts[0];
+  const domain = parts[1];
+  const visible = name.slice(0, 2);
+  return `${visible}****@${domain}`;
+}
+
 export class AuthController {
+  /**
+   * DevTinder Cookie Architecture:
+   * Sets httpOnly cookies on the response, keeping tokens safe from XSS attacks.
+   */
+  public static setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken?: string }): void {
+    const isProd = ENV.NODE_ENV === "production";
+
+    // Set primary token cookie (DevTinder pattern)
+    res.cookie("token", tokens.accessToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? "none" : "lax",
+      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    });
+
+    if (tokens.refreshToken) {
+      res.cookie("refreshToken", tokens.refreshToken, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd ? "none" : "lax",
+        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      });
+    }
+  }
+
+  /**
+   * Clears auth cookies on logout
+   */
+  public static clearAuthCookies(res: Response): void {
+    const isProd = ENV.NODE_ENV === "production";
+    const sameSiteMode: "none" | "lax" = isProd ? "none" : "lax";
+    const clearOptions = {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: sameSiteMode,
+      expires: new Date(0),
+    };
+
+    res.cookie("token", null, clearOptions);
+    res.cookie("refreshToken", null, clearOptions);
+    res.clearCookie("token", { httpOnly: true, sameSite: isProd ? "none" : "lax", secure: isProd });
+    res.clearCookie("refreshToken", { httpOnly: true, sameSite: isProd ? "none" : "lax", secure: isProd });
+  }
+
+  /**
+   * Generates short-lived Access Token (15m) and long-lived Refresh Token (7d).
+   * Persists the active Refresh Token in Redis for session verification.
+   */
+  public static async issueTokens(payload: TokenPayload): Promise<{ accessToken: string; refreshToken: string }> {
+    const accessToken = jwt.sign(payload, ENV.JWT_ACCESS_SECRET, {
+      expiresIn: ENV.JWT_ACCESS_EXPIRES_IN as any,
+    });
+
+    const refreshToken = jwt.sign(
+      { userId: payload.userId, tokenType: "refresh" },
+      ENV.JWT_REFRESH_SECRET,
+      { expiresIn: ENV.JWT_REFRESH_EXPIRES_IN as any }
+    );
+
+    // Store active refresh token in Redis (7 days TTL)
+    await redis.setex(`rt:${payload.userId}`, 7 * 86400, refreshToken);
+
+    return { accessToken, refreshToken };
+  }
+
+  /**
+   * STEP 1: 
+   * Student enters enrollment number (e.g., 22/ICS/045).
+   * Backend verifies against gbu_student_roster and dispatches verification OTP via Resend.
+   */
+  static async verifyEnrollment(req: Request, res: Response): Promise<void> {
+    try {
+      const enrollmentNo = (req.body.enrollmentNo || "").trim().toUpperCase();
+
+      const [rosterRecord] = await db
+        .select()
+        .from(gbuStudentRoster)
+        .where(eq(gbuStudentRoster.enrollmentNo, enrollmentNo))
+        .limit(1);
+
+      if (!rosterRecord) {
+        res.status(404).json({
+          success: false,
+          message: `Enrollment number "${enrollmentNo}" not found in GBU CSMS registry. Please contact registrar/ERP cell.`,
+        });
+        return;
+      }
+
+      if (rosterRecord.isClaimed) {
+        res.status(400).json({
+          success: false,
+          message: `An account for enrollment "${enrollmentNo}" is already activated. Please proceed to login.`,
+        });
+        return;
+      }
+
+      // Check 60-second cooldown in Redis
+      const cooldownRemaining = await OtpService.getCooldownSeconds(enrollmentNo);
+      if (cooldownRemaining > 0) {
+        res.status(429).json({
+          success: false,
+          message: `Please wait ${cooldownRemaining} second(s) before requesting another OTP.`,
+          cooldownRemaining,
+        });
+        return;
+      }
+
+      // Generate a 6-digit verification OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+      // Store OTP in Redis (15m TTL) and activate 60s cooldown
+      await OtpService.storeOtp(enrollmentNo, otp);
+      await OtpService.setCooldown(enrollmentNo);
+
+      // Dispatch real email via Resend (with graceful terminal fallback if key not configured)
+      await EmailService.sendOtpEmail(
+        rosterRecord.registeredEmail,
+        otp,
+        rosterRecord.fullName,
+        rosterRecord.enrollmentNo
+      );
+
+      res.status(200).json({
+        success: true,
+        message: `Student identified: ${rosterRecord.fullName}. Verification OTP dispatched to registered email.`,
+        data: {
+          enrollmentNo: rosterRecord.enrollmentNo,
+          fullName: rosterRecord.fullName,
+          school: rosterRecord.school,
+          program: rosterRecord.program,
+          hostelBlock: rosterRecord.hostelBlock,
+          roomNo: rosterRecord.roomNo,
+          maskedEmail: maskEmail(rosterRecord.registeredEmail),
+          cooldownSeconds: 60,
+          // In development/viva mode, return devOtp so live demonstration never stalls
+          devOtp: ENV.NODE_ENV === "development" ? otp : undefined,
+        },
+      });
+    } catch (err) {
+      console.error("Verify enrollment error:", err);
+      res.status(500).json({ success: false, message: "Failed to verify enrollment number" });
+    }
+  }
+
+  /**
+   * Resend Verification OTP with 60-second Redis cooldown
+   */
+  static async resendOtp(req: Request, res: Response): Promise<void> {
+    try {
+      const enrollmentNo = (req.body.enrollmentNo || "").trim().toUpperCase();
+
+      const [rosterRecord] = await db
+        .select()
+        .from(gbuStudentRoster)
+        .where(eq(gbuStudentRoster.enrollmentNo, enrollmentNo))
+        .limit(1);
+
+      if (!rosterRecord) {
+        res.status(404).json({
+          success: false,
+          message: `Enrollment number "${enrollmentNo}" not found in GBU CSMS registry.`,
+        });
+        return;
+      }
+
+      if (rosterRecord.isClaimed) {
+        res.status(400).json({
+          success: false,
+          message: `An account for enrollment "${enrollmentNo}" is already activated. Please log in.`,
+        });
+        return;
+      }
+
+      // Check 60-second cooldown in Redis
+      const cooldownRemaining = await OtpService.getCooldownSeconds(enrollmentNo);
+      if (cooldownRemaining > 0) {
+        res.status(429).json({
+          success: false,
+          message: `Please wait ${cooldownRemaining} second(s) before requesting another OTP.`,
+          cooldownRemaining,
+        });
+        return;
+      }
+
+      // Generate new 6-digit OTP
+      const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+      // Store in Redis with 15m TTL & activate 60s cooldown
+      await OtpService.storeOtp(enrollmentNo, otp);
+      await OtpService.setCooldown(enrollmentNo);
+
+      // Dispatch real email via Resend
+      await EmailService.sendOtpEmail(
+        rosterRecord.registeredEmail,
+        otp,
+        rosterRecord.fullName,
+        rosterRecord.enrollmentNo
+      );
+
+      res.status(200).json({
+        success: true,
+        message: `A fresh verification code has been dispatched to ${maskEmail(rosterRecord.registeredEmail)}.`,
+        data: {
+          maskedEmail: maskEmail(rosterRecord.registeredEmail),
+          cooldownSeconds: 60,
+          devOtp: ENV.NODE_ENV === "development" ? otp : undefined,
+        },
+      });
+    } catch (err) {
+      console.error("Resend OTP error:", err);
+      res.status(500).json({ success: false, message: "Failed to resend verification OTP" });
+    }
+  }
+
+  /**
+   * STEP 2: Complete Student Registration using verified GBU Enrollment + OTP
+   * Auto-populates official student profile directly from GBU CSMS registry!
+   */
+  static async registerStudent(req: Request, res: Response): Promise<void> {
+    try {
+      const enrollmentNo = (req.body.enrollmentNo || "").trim().toUpperCase();
+      const { otp, password } = req.body;
+
+      const [rosterRecord] = await db
+        .select()
+        .from(gbuStudentRoster)
+        .where(eq(gbuStudentRoster.enrollmentNo, enrollmentNo))
+        .limit(1);
+
+      if (!rosterRecord) {
+        res.status(404).json({ success: false, message: "Enrollment record not found" });
+        return;
+      }
+
+      if (rosterRecord.isClaimed) {
+        res.status(400).json({ success: false, message: "Account already registered for this enrollment number" });
+        return;
+      }
+
+      // Verify OTP via Redis (or Postgres fallback)
+      const isOtpValid = await OtpService.verifyOtp(enrollmentNo, otp);
+
+      if (!isOtpValid) {
+        res.status(400).json({ success: false, message: "Invalid or expired verification OTP." });
+        return;
+      }
+
+      // Hash password
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(password, salt);
+
+      // Create verified student user
+      const [newUser] = await db
+        .insert(users)
+        .values({
+          name: rosterRecord.fullName,
+          email: rosterRecord.registeredEmail.toLowerCase(),
+          passwordHash,
+          role: "STUDENT" as const,
+          enrollmentNo: rosterRecord.enrollmentNo,
+          school: rosterRecord.school,
+          hostelBlock: rosterRecord.hostelBlock,
+          roomNo: rosterRecord.roomNo,
+        })
+        .returning();
+
+      // Mark roster record as claimed & clear OTP
+      await db
+        .update(gbuStudentRoster)
+        .set({ isClaimed: true, activeOtp: null, otpExpiresAt: null })
+        .where(eq(gbuStudentRoster.enrollmentNo, enrollmentNo));
+      await OtpService.clearOtp(enrollmentNo);
+
+      // Sign Double JWT Tokens (Access Token + Refresh Token)
+      const tokenPayload: TokenPayload = {
+        userId: newUser.id,
+        email: newUser.email,
+        role: "STUDENT",
+        name: newUser.name,
+        enrollmentNo: newUser.enrollmentNo,
+        school: newUser.school,
+        hostelBlock: newUser.hostelBlock,
+        roomNo: newUser.roomNo,
+      };
+
+      const tokens = await AuthController.issueTokens(tokenPayload);
+
+      // DevTinder Pattern: Set httpOnly cookie on response
+      AuthController.setAuthCookies(res, tokens);
+
+      res.status(201).json({
+        success: true,
+        message: `Account activated for ${newUser.name} (${newUser.enrollmentNo})!`,
+        data: {
+          user: {
+            id: newUser.id,
+            name: newUser.name,
+            email: newUser.email,
+            role: newUser.role,
+            enrollmentNo: newUser.enrollmentNo,
+            school: newUser.school,
+            hostelBlock: newUser.hostelBlock,
+            roomNo: newUser.roomNo,
+          },
+          token: tokens.accessToken,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        },
+      });
+    } catch (err) {
+      console.error("Register student error:", err);
+      res.status(500).json({ success: false, message: "Failed to register student account" });
+    }
+  }
+
+  /**
+   * Generic Registration for Admin / Staff
+   */
   static async register(req: Request, res: Response): Promise<void> {
     try {
       const { name, email, password, role, departmentId, phone } = req.body;
 
-      // Check if user already exists
       const [existingUser] = await db
         .select()
         .from(users)
@@ -42,11 +390,9 @@ export class AuthController {
         return;
       }
 
-      // Hash password
       const salt = await bcrypt.genSalt(10);
       const passwordHash = await bcrypt.hash(password, salt);
 
-      // Create user
       const [newUser] = await db
         .insert(users)
         .values({
@@ -66,7 +412,6 @@ export class AuthController {
           createdAt: users.createdAt,
         });
 
-      // Sign JWT
       const tokenPayload: TokenPayload = {
         userId: newUser.id,
         email: newUser.email,
@@ -75,16 +420,19 @@ export class AuthController {
         departmentId: newUser.departmentId,
       };
 
-      const token = jwt.sign(tokenPayload, ENV.JWT_SECRET, {
-        expiresIn: ENV.JWT_EXPIRES_IN as any,
-      });
+      const tokens = await AuthController.issueTokens(tokenPayload);
+
+      // DevTinder Pattern: Set httpOnly cookie on response
+      AuthController.setAuthCookies(res, tokens);
 
       res.status(201).json({
         success: true,
         message: "User registered successfully",
         data: {
           user: newUser,
-          token,
+          token: tokens.accessToken,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
         },
       });
     } catch (err) {
@@ -96,9 +444,23 @@ export class AuthController {
     }
   }
 
+  /**
+   * User Login (Supports Student, Staff, Admin)
+   */
   static async login(req: Request, res: Response): Promise<void> {
     try {
       const { email, password } = req.body;
+
+      // Check brute-force lockout before doing anything
+      const lockout = await LoginGuardService.checkLockout(email);
+      if (lockout.locked) {
+        const mins = Math.ceil(lockout.remainingSeconds / 60);
+        res.status(429).json({
+          success: false,
+          message: `Account temporarily locked due to ${LoginGuardService.maxAttempts} failed attempts. Try again in ${mins} minute(s).`,
+        });
+        return;
+      }
 
       const [user] = await db
         .select()
@@ -107,6 +469,7 @@ export class AuthController {
         .limit(1);
 
       if (!user) {
+        await LoginGuardService.recordFailedAttempt(email);
         res.status(401).json({
           success: false,
           message: "Invalid email or password credentials.",
@@ -116,12 +479,19 @@ export class AuthController {
 
       const isPasswordMatch = await bcrypt.compare(password, user.passwordHash);
       if (!isPasswordMatch) {
+        const attempts = await LoginGuardService.recordFailedAttempt(email);
+        const remaining = LoginGuardService.maxAttempts - attempts;
         res.status(401).json({
           success: false,
-          message: "Invalid email or password credentials.",
+          message: remaining > 0
+            ? `Invalid email or password credentials. ${remaining} attempt(s) remaining.`
+            : `Account locked due to too many failed attempts. Try again in 15 minutes.`,
         });
         return;
       }
+
+      // Successful login — reset failed attempts
+      await LoginGuardService.resetAttempts(email);
 
       const tokenPayload: TokenPayload = {
         userId: user.id,
@@ -129,11 +499,16 @@ export class AuthController {
         role: user.role as UserRole,
         name: user.name,
         departmentId: user.departmentId,
+        enrollmentNo: user.enrollmentNo,
+        school: user.school,
+        hostelBlock: user.hostelBlock,
+        roomNo: user.roomNo,
       };
 
-      const token = jwt.sign(tokenPayload, ENV.JWT_SECRET, {
-        expiresIn: ENV.JWT_EXPIRES_IN as any,
-      });
+      const tokens = await AuthController.issueTokens(tokenPayload);
+
+      // DevTinder Pattern: Set httpOnly cookie on response
+      AuthController.setAuthCookies(res, tokens);
 
       res.status(200).json({
         success: true,
@@ -145,8 +520,14 @@ export class AuthController {
             email: user.email,
             role: user.role,
             departmentId: user.departmentId,
+            enrollmentNo: user.enrollmentNo,
+            school: user.school,
+            hostelBlock: user.hostelBlock,
+            roomNo: user.roomNo,
           },
-          token,
+          token: tokens.accessToken,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
         },
       });
     } catch (err) {
@@ -158,6 +539,9 @@ export class AuthController {
     }
   }
 
+  /**
+   * Get Current User Profile
+   */
   static async getMe(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       if (!req.user) {
@@ -171,6 +555,10 @@ export class AuthController {
           name: users.name,
           email: users.email,
           role: users.role,
+          enrollmentNo: users.enrollmentNo,
+          school: users.school,
+          hostelBlock: users.hostelBlock,
+          roomNo: users.roomNo,
           departmentId: users.departmentId,
           phone: users.phone,
           createdAt: users.createdAt,
@@ -191,6 +579,113 @@ export class AuthController {
     } catch (err) {
       console.error("GetMe error:", err);
       res.status(500).json({ success: false, message: "Failed to get user profile" });
+    }
+  }
+
+  /**
+   * JWT Refresh Token Rotation Endpoint
+   * Accepts long-lived Refresh Token, verifies against Redis, and issues a fresh pair.
+   */
+  static async refreshToken(req: Request, res: Response): Promise<void> {
+    try {
+      const refreshToken = req.body?.refreshToken || req.cookies?.refreshToken;
+      if (!refreshToken) {
+        res.status(400).json({ success: false, message: "Refresh token is required in request body or cookie." });
+        return;
+      }
+
+      let decoded: { userId: string; tokenType?: string };
+      try {
+        decoded = jwt.verify(refreshToken, ENV.JWT_REFRESH_SECRET) as any;
+      } catch {
+        res.status(401).json({
+          success: false,
+          message: "Invalid or expired refresh token. Please log in again.",
+        });
+        return;
+      }
+
+      // Check if refresh token is in Redis and matches active session
+      const storedToken = await redis.get(`rt:${decoded.userId}`);
+      if (!storedToken || storedToken !== refreshToken) {
+        res.status(401).json({
+          success: false,
+          message: "Refresh token has been revoked or expired. Please log in again.",
+        });
+        return;
+      }
+
+      // Fetch user profile for token payload
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, decoded.userId))
+        .limit(1);
+
+      if (!user) {
+        res.status(404).json({ success: false, message: "User account no longer exists." });
+        return;
+      }
+
+      const tokenPayload: TokenPayload = {
+        userId: user.id,
+        email: user.email,
+        role: user.role as UserRole,
+        name: user.name,
+        departmentId: user.departmentId,
+        enrollmentNo: user.enrollmentNo,
+        school: user.school,
+        hostelBlock: user.hostelBlock,
+        roomNo: user.roomNo,
+      };
+
+      // Token Rotation: issue brand new Access Token and Refresh Token
+      const tokens = await AuthController.issueTokens(tokenPayload);
+
+      // DevTinder Pattern: Set rotated httpOnly cookies
+      AuthController.setAuthCookies(res, tokens);
+
+      res.status(200).json({
+        success: true,
+        message: "Token refreshed successfully",
+        data: {
+          token: tokens.accessToken,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        },
+      });
+    } catch (err) {
+      console.error("Refresh token error:", err);
+      res.status(500).json({ success: false, message: "Failed to refresh token." });
+    }
+  }
+
+  /**
+   * User Logout: Revokes active Refresh Token in Redis and blacklists the current Access Token.
+   * DevTinder Pattern: Clears cookies from the browser.
+   */
+  static async logout(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (req.user) {
+        // 1. Delete refresh token from Redis (revokes session renewal)
+        await redis.del(`rt:${req.user.userId}`);
+      }
+
+      if (req.token) {
+        // 2. Blacklist current access token in Redis (15 minutes TTL)
+        await redis.setex(`bl:${req.token}`, 15 * 60, "revoked");
+      }
+
+      // DevTinder Pattern: Clear auth cookies on response
+      AuthController.clearAuthCookies(res);
+
+      res.status(200).json({
+        success: true,
+        message: "Logged out successfully. All sessions revoked.",
+      });
+    } catch (err) {
+      console.error("Logout error:", err);
+      res.status(500).json({ success: false, message: "Failed to log out." });
     }
   }
 }

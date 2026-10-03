@@ -7,19 +7,23 @@ import {
 } from "../controllers/complaintController";
 import { authenticateToken, requireRoles } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
+import { complaintCreateLimiter } from "../middleware/rateLimiter";
 
 const router = Router();
 
 // All complaint endpoints require authentication
 router.use(authenticateToken);
 
-// 1. Submit complaint (Student, Staff, or Admin)
-router.post("/", validateBody(createComplaintSchema), ComplaintController.createComplaint);
+// 1. Submit complaint (Student, Staff, or Admin) — rate limited
+router.post("/", complaintCreateLimiter, validateBody(createComplaintSchema), ComplaintController.createComplaint);
 
-// 2. List complaints (scoped by role & query filters)
+// 2. Real-Time Server-Sent Events (SSE) Stream
+router.get("/stream", ComplaintController.streamEvents);
+
+// 3. List complaints (scoped by role & query filters)
 router.get("/", ComplaintController.getComplaints);
 
-// 3. Get single complaint with full details, AI logs, and similarity matches
+// 4. Get single complaint with full details, AI logs, and similarity matches
 router.get("/:id", ComplaintController.getComplaintById);
 
 // 4. Update complaint status (Staff & Admin)

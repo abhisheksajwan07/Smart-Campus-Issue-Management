@@ -1,18 +1,21 @@
+import crypto from "crypto";
 import { Response } from "express";
 import { z } from "zod";
 import { db } from "../config/database";
 import { complaints, complaintTimeline, departments, users } from "../db/schema";
 import { eq, desc, and, or, ilike } from "drizzle-orm";
-import { AuthenticatedRequest, PriorityLevel } from "../types";
+import { AuthenticatedRequest, PriorityLevel, ComplaintStatus } from "../types";
 import { AiService } from "../services/aiService";
 import { SlaService } from "../services/slaService";
 import { RoutingService } from "../services/routingService";
-import { SimilarityService, SimilarComplaintMatch } from "../services/similarityService";
+import { findSimilarComplaints, SimilarComplaintMatch, DEFAULT_SIMILARITY_THRESHOLD } from "../services/similarityService";
+import { SSEService } from "../services/sseService";
 
 export const createComplaintSchema = z.object({
   title: z.string().min(5, "Title must be at least 5 characters"),
   description: z.string().min(10, "Description must be at least 10 characters"),
   location: z.string().min(3, "Location is required (e.g. Room 204, Hostel C)"),
+  imageUrl: z.string().nullable().optional(),
 });
 
 export const updateStatusSchema = z.object({
@@ -41,7 +44,8 @@ export class ComplaintController {
         return;
       }
 
-      const { title, description, location } = req.body;
+      const currentUser = req.user;
+      const { title, description, location, imageUrl } = req.body;
       const combinedText = `${title}. ${description}. Location: ${location}`;
 
       // 1. AI Analysis Orchestration (Protected with Fallback)
@@ -60,66 +64,83 @@ export class ComplaintController {
       const slaHours = SlaService.getSlaHours(predictedPriority);
       const slaDeadlineAt = SlaService.computeDeadline(predictedPriority);
 
-      // 4. Generate unique Ticket Number (e.g. CMP-2026-X9K2)
-      const randomSuffix = Math.random().toString(36).substring(2, 6).toUpperCase();
+      // 4. Generate unique Ticket Number with cryptographic randomness (e.g. CMP-2026-A8F3B2)
+      const randomSuffix = crypto.randomBytes(3).toString("hex").toUpperCase();
       const ticketNumber = `CMP-${new Date().getFullYear()}-${randomSuffix}`;
 
-      // 5. Insert Complaint into DB
-      const [newComplaint] = await db
-        .insert(complaints)
-        .values({
-          ticketNumber,
-          title,
-          description,
-          location,
-          status: "SUBMITTED",
-          studentId: req.user.userId,
-          assignedDepartmentId,
+      // 5 & 6. Atomic Database Transaction: Insert Complaint + Audit Timeline
+      const newComplaint = await db.transaction(async (tx) => {
+        const [complaint] = await tx
+          .insert(complaints)
+          .values({
+            ticketNumber,
+            title,
+            description,
+            location,
+            imageUrl: imageUrl || null,
+            status: "SUBMITTED",
+            studentId: currentUser.userId,
+            assignedDepartmentId,
 
-          // AI prediction fields
-          predictedCategory,
-          predictedPriority,
-          aiConfidenceCategory: aiResult.category.confidence,
-          aiConfidencePriority: aiResult.priority.confidence,
-          aiSummary: aiResult.summary,
-          suggestedAction: aiResult.suggestedAction,
-          embedding: aiResult.embedding,
+            // AI prediction fields
+            predictedCategory,
+            predictedPriority,
+            aiConfidenceCategory: aiResult.category.confidence,
+            aiConfidencePriority: aiResult.priority.confidence,
+            aiSummary: aiResult.summary,
+            suggestedAction: aiResult.suggestedAction,
+            embedding: aiResult.embedding,
 
-          // Initial triage mirrors AI prediction
-          finalCategory: predictedCategory,
-          finalPriority: predictedPriority,
-          isAiOverridden: false,
+            // Initial triage mirrors AI prediction
+            finalCategory: predictedCategory,
+            finalPriority: predictedPriority,
+            isAiOverridden: false,
 
-          // SLA fields
-          slaHours,
-          slaDeadlineAt,
-          isSlaBreached: false,
-        })
-        .returning();
+            // SLA fields
+            slaHours,
+            slaDeadlineAt,
+            isSlaBreached: false,
+          })
+          .returning();
 
-      // 6. Record Audit Timeline Entries
-      await db.insert(complaintTimeline).values([
-        {
-          complaintId: newComplaint.id,
-          actorId: req.user.userId,
-          action: "SUBMITTED",
-          note: `Complaint filed by student at ${location}`,
-        },
-        {
-          complaintId: newComplaint.id,
-          actorId: null, // System / AI Actor
-          action: "AI_ANALYZED",
-          note: `AI classified as "${predictedCategory}" (${(aiResult.category.confidence * 100).toFixed(0)}%) with priority "${predictedPriority}". SLA set to ${slaHours}h.`,
-        },
-      ]);
+        await tx.insert(complaintTimeline).values([
+          {
+            complaintId: complaint.id,
+            actorId: currentUser.userId,
+            action: "SUBMITTED" as const,
+            note: `Complaint filed by student at ${location}`,
+          },
+          {
+            complaintId: complaint.id,
+            actorId: null, // System / AI Actor
+            action: "AI_ANALYZED" as const,
+            note: `AI classified as "${predictedCategory}" (${(aiResult.category.confidence * 100).toFixed(0)}%) with priority "${predictedPriority}". SLA set to ${slaHours}h.`,
+          },
+        ]);
 
-      // 7. Find Semantically Similar / Duplicate Complaints
-      const similarComplaints = await SimilarityService.findSimilarComplaints(
-        aiResult.embedding,
-        newComplaint.id,
-        0.80,
-        3
-      );
+        return complaint;
+      });
+
+      // 7. Find Semantically Similar / Duplicate Suggestions (Non-critical enrichment)
+      let similarComplaints: SimilarComplaintMatch[] = [];
+      try {
+        if (aiResult.embedding && aiResult.embedding.length > 0) {
+          similarComplaints = await findSimilarComplaints(
+            aiResult.embedding,
+            newComplaint.id,
+            DEFAULT_SIMILARITY_THRESHOLD,
+            3
+          );
+        }
+      } catch (simErr) {
+        console.warn("Non-critical: Similarity search failed, continuing without duplicate suggestions:", simErr);
+      }
+
+      // 8. Broadcast Real-Time SSE Event to All Connected Admin Dashboards
+      SSEService.broadcast("NEW_COMPLAINT", {
+        complaint: newComplaint,
+        similarComplaints,
+      });
 
       res.status(201).json({
         success: true,
@@ -169,10 +190,10 @@ export class ComplaintController {
       }
 
       if (status) {
-        conditions.push(eq(complaints.status, String(status)));
+        conditions.push(eq(complaints.status, String(status) as ComplaintStatus));
       }
       if (priority) {
-        conditions.push(eq(complaints.finalPriority, String(priority)));
+        conditions.push(eq(complaints.finalPriority, String(priority) as PriorityLevel));
       }
       if (category) {
         conditions.push(eq(complaints.finalCategory, String(category)));
@@ -322,15 +343,19 @@ export class ComplaintController {
         .where(eq(complaintTimeline.complaintId, id))
         .orderBy(desc(complaintTimeline.createdAt));
 
-      // Fetch Similar / Duplicate Complaints
+      // Fetch Similar / Duplicate Complaints (Non-critical enrichment)
       let similarComplaints: SimilarComplaintMatch[] = [];
-      if (complaint.embedding && Array.isArray(complaint.embedding)) {
-        similarComplaints = await SimilarityService.findSimilarComplaints(
-          complaint.embedding,
-          complaint.id,
-          0.75,
-          3
-        );
+      try {
+        if (complaint.embedding && Array.isArray(complaint.embedding)) {
+          similarComplaints = await findSimilarComplaints(
+            complaint.embedding,
+            complaint.id,
+            DEFAULT_SIMILARITY_THRESHOLD,
+            3
+          );
+        }
+      } catch (simErr) {
+        console.warn("Non-critical: Similarity search failed in getComplaintById:", simErr);
       }
 
       const slaInfo = SlaService.getRemainingTimeInfo(
@@ -338,10 +363,13 @@ export class ComplaintController {
         complaint.status === "RESOLVED" || complaint.status === "REJECTED"
       );
 
+      // Omit 384-dimensional raw embedding vector from client JSON to save bandwidth
+      const { embedding, ...safeComplaint } = complaint;
+
       res.status(200).json({
         success: true,
         data: {
-          ...complaint,
+          ...safeComplaint,
           slaRemaining: slaInfo.formatted,
           isSlaBreached: slaInfo.isBreached || complaint.isSlaBreached,
           timeline,
@@ -375,21 +403,34 @@ export class ComplaintController {
 
       const resolvedAt = status === "RESOLVED" ? new Date() : existing.resolvedAt;
 
-      const [updated] = await db
-        .update(complaints)
-        .set({
-          status,
-          resolvedAt,
-          updatedAt: new Date(),
-        })
-        .where(eq(complaints.id, id))
-        .returning();
+      // Atomic Transaction: Update complaint status + write audit timeline entry
+      const updated = await db.transaction(async (tx) => {
+        const [complaintRow] = await tx
+          .update(complaints)
+          .set({
+            status,
+            resolvedAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(complaints.id, id))
+          .returning();
 
-      // Record timeline
-      await db.insert(complaintTimeline).values({
+        await tx.insert(complaintTimeline).values({
+          complaintId: id,
+          actorId: req.user?.userId || null,
+          action: status === "RESOLVED" ? "RESOLVED" as const : "STATUS_UPDATED" as const,
+          note: note || `Status transitioned to "${status}"`,
+        });
+
+        return complaintRow;
+      });
+
+      // Broadcast Real-Time SSE Event
+      SSEService.broadcast("STATUS_UPDATED", {
         complaintId: id,
-        actorId: req.user?.userId || null,
-        action: status === "RESOLVED" ? "RESOLVED" : "STATUS_UPDATED",
+        ticketNumber: updated.ticketNumber,
+        status: updated.status,
+        resolvedAt: updated.resolvedAt,
         note: note || `Status transitioned to "${status}"`,
       });
 
@@ -442,29 +483,45 @@ export class ComplaintController {
         slaDeadlineAt = SlaService.computeDeadline(newPriority, existing.createdAt);
       }
 
-      const [updated] = await db
-        .update(complaints)
-        .set({
-          finalCategory: newCategory,
-          finalPriority: newPriority,
-          isAiOverridden: true,
-          overriddenById: req.user?.userId || null,
-          overriddenAt: new Date(),
-          overrideReason,
-          assignedDepartmentId,
-          slaHours,
-          slaDeadlineAt,
-          updatedAt: new Date(),
-        })
-        .where(eq(complaints.id, id))
-        .returning();
+      // Atomic Transaction: Update overridden fields + write audit timeline entry
+      const updated = await db.transaction(async (tx) => {
+        const [complaintRow] = await tx
+          .update(complaints)
+          .set({
+            finalCategory: newCategory,
+            finalPriority: newPriority,
+            isAiOverridden: true,
+            overriddenById: req.user?.userId || null,
+            overriddenAt: new Date(),
+            overrideReason,
+            assignedDepartmentId,
+            slaHours,
+            slaDeadlineAt,
+            updatedAt: new Date(),
+          })
+          .where(eq(complaints.id, id))
+          .returning();
 
-      // Record in audit timeline
-      await db.insert(complaintTimeline).values({
+        await tx.insert(complaintTimeline).values({
+          complaintId: id,
+          actorId: req.user?.userId || null,
+          action: "AI_OVERRIDDEN" as const,
+          note: `AI prediction overridden by Admin. Reason: "${overrideReason}". Final: [Category: ${newCategory}, Priority: ${newPriority}]`,
+        });
+
+        return complaintRow;
+      });
+
+      // Broadcast Real-Time SSE Event
+      SSEService.broadcast("AI_OVERRIDDEN", {
         complaintId: id,
-        actorId: req.user?.userId || null,
-        action: "AI_OVERRIDDEN",
-        note: `AI prediction overridden by Admin. Reason: "${overrideReason}". Final: [Category: ${newCategory}, Priority: ${newPriority}]`,
+        ticketNumber: updated.ticketNumber,
+        finalCategory: updated.finalCategory,
+        finalPriority: updated.finalPriority,
+        isAiOverridden: true,
+        slaHours: updated.slaHours,
+        slaDeadlineAt: updated.slaDeadlineAt,
+        overrideReason,
       });
 
       res.status(200).json({
@@ -476,5 +533,30 @@ export class ComplaintController {
       console.error("Override AI error:", err);
       res.status(500).json({ success: false, message: "Failed to override AI prediction" });
     }
+  }
+
+  /**
+   * REAL-TIME SERVER-SENT EVENTS (SSE) STREAM
+   * Unidirectional live event stream for Admin and Staff Dashboards
+   */
+  static streamEvents(req: AuthenticatedRequest, res: Response): void {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    (res as any).flushHeaders?.();
+
+    // Initial handshake message
+    res.write(
+      `event: CONNECTED\ndata: ${JSON.stringify({
+        message: "Live SSE connection established",
+        timestamp: new Date().toISOString(),
+      })}\n\n`
+    );
+
+    SSEService.addClient(res);
+
+    req.on("close", () => {
+      SSEService.removeClient(res);
+    });
   }
 }

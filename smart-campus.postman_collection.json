@@ -1,0 +1,395 @@
+{
+  "info": {
+    "name": "Smart Campus Issue Management API",
+    "description": "Complete API Collection for Smart Campus Issue Management System (Node.js Express + Drizzle + PostgreSQL + FastAPI)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000/api",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "sampleComplaintId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "mlUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 - Auth",
+      "item": [
+        {
+          "name": "01 - Verify GBU Enrollment",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enrollmentNo\": \"23/SOBT/019\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/verify-enrollment" }
+          }
+        },
+        {
+          "name": "02 - Register Student (with OTP)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enrollmentNo\": \"23/SOBT/019\",\n  \"otp\": \"123456\",\n  \"password\": \"Password@123\",\n  \"hostelBlock\": \"Tagore Hostel\",\n  \"roomNo\": \"B-204\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/register-student" }
+          }
+        },
+        {
+          "name": "03 - Login (Student)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.accessToken) {",
+                  "  pm.collectionVariables.set('token', json.data.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"abhishek.sajwan@gbu.ac.in\",\n  \"password\": \"Password@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login" }
+          }
+        },
+        {
+          "name": "04 - Login (Staff - Electrical)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.accessToken) {",
+                  "  pm.collectionVariables.set('token', json.data.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"staff.elec@gbu.ac.in\",\n  \"password\": \"Password@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login" }
+          }
+        },
+        {
+          "name": "05 - Login (Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.accessToken) {",
+                  "  pm.collectionVariables.set('token', json.data.accessToken);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"admin@gbu.ac.in\",\n  \"password\": \"Password@123\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/login" }
+          }
+        },
+        {
+          "name": "06 - Get Current User Profile (Me)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/me" }
+          }
+        },
+        {
+          "name": "07 - Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refreshToken\": \"paste_token_here\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/auth/refresh-token" }
+          }
+        },
+        {
+          "name": "08 - Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/auth/logout" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "02 - Complaints",
+      "item": [
+        {
+          "name": "01 - Submit Complaint (AI Triage & SLA)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data && json.data.complaint && json.data.complaint.id) {",
+                  "  pm.collectionVariables.set('sampleComplaintId', json.data.complaint.id);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Ceiling fan making loud grinding noise and sparking\",\n  \"description\": \"The regulator is stuck and the fan smells like burnt plastic in room 302\",\n  \"location\": \"Hostel Block 1, Room 302\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/complaints" }
+          }
+        },
+        {
+          "name": "02 - List Complaints (Role-Scoped & Filtered)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/complaints?status=SUBMITTED&priority=CRITICAL",
+              "query": [
+                { "key": "status", "value": "SUBMITTED" },
+                { "key": "priority", "value": "CRITICAL" },
+                { "key": "category", "value": "Electrical", "disabled": true },
+                { "key": "search", "value": "fan", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "03 - Get Single Complaint (Details & Timeline)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/complaints/{{sampleComplaintId}}" }
+          }
+        },
+        {
+          "name": "04 - Update Complaint Status (Staff & Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"IN_PROGRESS\",\n  \"note\": \"Technician dispatched to Room 302 to inspect the fan regulator\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/complaints/{{sampleComplaintId}}/status" }
+          }
+        },
+        {
+          "name": "05 - Human-in-the-Loop Override (Admin)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"Electrical\",\n  \"priority\": \"CRITICAL\",\n  \"overrideReason\": \"Live sparking wires near mattress; escalating SLA to 6 hours immediately.\"\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/complaints/{{sampleComplaintId}}/override" }
+          }
+        },
+        {
+          "name": "06 - Real-Time Server-Sent Events (SSE)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/complaints/stream?token={{token}}",
+              "query": [{ "key": "token", "value": "{{token}}" }]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "03 - Departments",
+      "item": [
+        {
+          "name": "01 - List Departments",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/departments" }
+          }
+        },
+        {
+          "name": "02 - Create Department (Admin)",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Security & Surveillance\",\n  \"code\": \"SEC\",\n  \"description\": \"Campus security, CCTV monitoring, and entry gate passes\",\n  \"slaHours\": 12\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/departments" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "04 - Analytics",
+      "item": [
+        {
+          "name": "01 - Dashboard Metrics (Staff & Admin)",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": { "raw": "{{baseUrl}}/analytics/dashboard" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "05 - Admin & Roster",
+      "item": [
+        {
+          "name": "01 - List Student Roster",
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "url": {
+              "raw": "{{baseUrl}}/admin/roster?isClaimed=false",
+              "query": [{ "key": "isClaimed", "value": "false" }]
+            }
+          }
+        },
+        {
+          "name": "02 - Bulk Upload Student Roster",
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "Authorization", "value": "Bearer {{token}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"students\": [\n    {\n      \"enrollmentNo\": \"24/ICS/101\",\n      \"name\": \"Rohan Sharma\",\n      \"officialEmail\": \"rohan.sharma@gbu.ac.in\",\n      \"school\": \"USICT\",\n      \"program\": \"B.Tech CSE\"\n    }\n  ]\n}"
+            },
+            "url": { "raw": "{{baseUrl}}/admin/roster/bulk-upload" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "06 - Upload & Health",
+      "item": [
+        {
+          "name": "01 - Health Check",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health" }
+          }
+        },
+        {
+          "name": "02 - Upload Complaint Photo",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [{ "key": "image", "type": "file" }]
+            },
+            "url": { "raw": "{{baseUrl}}/upload" }
+          }
+        }
+      ]
+    },
+    {
+      "name": "07 - ML Microservice (FastAPI)",
+      "item": [
+        {
+          "name": "01 - Direct AI Analyze (Category, Priority, Embedding)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"The ceiling fan is sparking and making loud noise in room 204\"\n}"
+            },
+            "url": { "raw": "{{mlUrl}}/analyze" }
+          }
+        },
+        {
+          "name": "02 - Direct Priority Prediction",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Water leaking continuously from the ceiling\"\n}"
+            },
+            "url": { "raw": "{{mlUrl}}/predict" }
+          }
+        },
+        {
+          "name": "03 - FastAPI Interactive Docs",
+          "request": {
+            "method": "GET",
+            "url": { "raw": "{{mlUrl}}/docs" }
+          }
+        }
+      ]
+    }
+  ]
+}

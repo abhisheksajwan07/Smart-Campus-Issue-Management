@@ -17,10 +17,15 @@ export interface TokenPayload {
   role: UserRole;
   name: string;
   departmentId?: string | null;
+  enrollmentNo?: string | null;
+  school?: string | null;
+  hostelBlock?: string | null;
+  roomNo?: string | null;
 }
 
 export interface AuthenticatedRequest extends Request {
   user?: TokenPayload;
+  token?: string;
 }
 
 export interface AiAnalyzeRequest {

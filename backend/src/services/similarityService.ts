@@ -1,6 +1,8 @@
 import { db } from "../config/database";
 import { complaints } from "../db/schema";
-import { isNotNull, ne } from "drizzle-orm";
+import { cosineDistance, sql, ne, and, isNotNull, lte, asc } from "drizzle-orm";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 export interface SimilarComplaintMatch {
   id: string;
@@ -11,81 +13,95 @@ export interface SimilarComplaintMatch {
   similarity: number;
 }
 
-export class SimilarityService {
-  /**
-   * Cosine similarity between two float vectors
-   */
-  static cosineSimilarity(vecA: number[], vecB: number[]): number {
-    if (!vecA || !vecB || vecA.length === 0 || vecB.length === 0) return 0;
-    const len = Math.min(vecA.length, vecB.length);
+/**
+ * Calibrated on 30 labelled complaint pairs using calibrateSimilarityThreshold.ts.
+ * Chosen to maximise F1 on all-MiniLM-L6-v2 (384-dim SBERT) embeddings.
+ * Re-calibrate if you swap embedding models.
+ */
+export const DEFAULT_SIMILARITY_THRESHOLD = 0.80;
 
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
+const EMBEDDING_DIMENSIONS = 384;
 
-    for (let i = 0; i < len; i++) {
-      dotProduct += vecA[i] * vecB[i];
-      normA += vecA[i] * vecA[i];
-      normB += vecB[i] * vecB[i];
-    }
+// ─── Core Search ─────────────────────────────────────────────────────────────
 
-    if (normA === 0 || normB === 0) return 0;
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+/**
+ * Find existing complaints that are semantically similar to the provided embedding vector.
+ * Uses PostgreSQL pgvector cosine distance operator (<=>) via Drizzle ORM.
+ *
+ * NOTE: The HNSW index (complaints_embedding_hnsw_idx) is defined in schema.ts
+ * with vector_cosine_ops. Before calling this "indexed", verify with:
+ *   EXPLAIN ANALYZE SELECT ... FROM complaints ORDER BY embedding <=> '[...]' LIMIT 3;
+ * HNSW applies post-filters, so aggressive WHERE clauses may cause fewer rows than expected.
+ *
+ * @throws on DB failure — callers must decide fail-open vs fail-closed.
+ */
+export async function findSimilarComplaints(
+  embedding: number[],
+  excludeComplaintId?: string,
+  threshold: number = DEFAULT_SIMILARITY_THRESHOLD,
+  limit: number = 3,
+  options?: {
+    /** If true (default), skip RESOLVED and REJECTED complaints from results */
+    excludeInactive?: boolean;
+  }
+): Promise<SimilarComplaintMatch[]> {
+  // ── Guard: empty embedding → no results (not an error) ──
+  if (!embedding || embedding.length === 0) return [];
+
+  // ── Guard: wrong dimension → hard error before it hits the DB ──
+  if (embedding.length !== EMBEDDING_DIMENSIONS) {
+    throw new Error(
+      `Embedding dimension mismatch: expected ${EMBEDDING_DIMENSIONS}, got ${embedding.length}. ` +
+      `Ensure the ML service and pgvector column use the same model.`
+    );
   }
 
-  /**
-   * Find existing complaints that are semantically similar to the provided embedding vector
-   */
-  static async findSimilarComplaints(
-    embedding: number[],
-    excludeComplaintId?: string,
-    threshold: number = 0.75,
-    limit: number = 3
-  ): Promise<SimilarComplaintMatch[]> {
-    if (!embedding || embedding.length === 0) return [];
+  // pgvector: cosineDistance = 1 - cosineSimilarity
+  // similarity >= threshold  ⟺  cosineDistance <= (1 - threshold)
+  const maxDistance = 1 - threshold;
+  const distanceExpr = cosineDistance(complaints.embedding, embedding);
+  const similaritySql = sql<number>`(1 - (${distanceExpr}))`;
 
-    try {
-      // Query complaints that have an embedding stored
-      const candidates = await db
-        .select({
-          id: complaints.id,
-          ticketNumber: complaints.ticketNumber,
-          title: complaints.title,
-          location: complaints.location,
-          status: complaints.status,
-          embedding: complaints.embedding,
-        })
-        .from(complaints)
-        .where(
-          excludeComplaintId
-            ? ne(complaints.id, excludeComplaintId)
-            : isNotNull(complaints.embedding)
-        );
+  const conditions = [
+    isNotNull(complaints.embedding),
+    lte(distanceExpr, maxDistance),
+  ];
 
-      const matches: SimilarComplaintMatch[] = [];
-
-      for (const row of candidates) {
-        if (!row.embedding || !Array.isArray(row.embedding)) continue;
-
-        const score = this.cosineSimilarity(embedding, row.embedding);
-        if (score >= threshold) {
-          matches.push({
-            id: row.id,
-            ticketNumber: row.ticketNumber,
-            title: row.title,
-            location: row.location,
-            status: row.status,
-            similarity: parseFloat(score.toFixed(4)),
-          });
-        }
-      }
-
-      // Sort by highest similarity
-      matches.sort((a, b) => b.similarity - a.similarity);
-      return matches.slice(0, limit);
-    } catch (err) {
-      console.error("Error finding similar complaints:", err);
-      return [];
-    }
+  if (excludeComplaintId) {
+    conditions.push(ne(complaints.id, excludeComplaintId));
   }
+
+  // By default, exclude resolved/rejected complaints — a "fixed" issue isn't a duplicate
+  const excludeInactive = options?.excludeInactive ?? true;
+  if (excludeInactive) {
+    conditions.push(
+      sql`${complaints.status} NOT IN ('RESOLVED', 'REJECTED')`
+    );
+  }
+
+  // NO try/catch here. If the DB fails, the error propagates.
+  // The caller (complaintController) wraps this in try/catch and decides
+  // to fail-open: complaint is still created, similarity is just skipped.
+  const rows = await db
+    .select({
+      id: complaints.id,
+      ticketNumber: complaints.ticketNumber,
+      title: complaints.title,
+      location: complaints.location,
+      status: complaints.status,
+      similarity: similaritySql,
+    })
+    .from(complaints)
+    .where(and(...conditions))
+    .orderBy(asc(distanceExpr))
+    .limit(limit);
+
+  return rows.map((row) => ({
+    id: row.id,
+    ticketNumber: row.ticketNumber,
+    title: row.title,
+    location: row.location,
+    status: row.status,
+    similarity: Math.round(Number(row.similarity) * 1e4) / 1e4,
+  }));
 }

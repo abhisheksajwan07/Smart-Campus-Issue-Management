@@ -19,6 +19,11 @@ export const db = drizzle(pool, { schema });
 export async function testDbConnection(): Promise<boolean> {
   try {
     const client = await pool.connect();
+    try {
+      await client.query("CREATE EXTENSION IF NOT EXISTS vector;");
+    } catch (extError) {
+      console.warn("Notice: pgvector extension could not be auto-created:", (extError as Error).message);
+    }
     const result = await client.query("SELECT current_database(), current_user;");
     client.release();
     console.log(

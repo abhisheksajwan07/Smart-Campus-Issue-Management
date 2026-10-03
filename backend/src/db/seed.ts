@@ -1,90 +1,185 @@
 import bcrypt from "bcryptjs";
 import { db, pool } from "../config/database";
-import { users, departments, complaints, complaintTimeline } from "./schema";
+import { users, departments, complaints, complaintTimeline, gbuStudentRoster } from "./schema";
 import { AiService } from "../services/aiService";
 import { SlaService } from "../services/slaService";
 
 async function seed() {
-  console.log("🌱 Starting Smart Campus Database Seeding...");
+  console.log("=================================================");
+  console.log("🌱 SEEDING GBU SMART CAMPUS COMPLAINT SYSTEM");
+  console.log("=================================================");
 
-  // 1. Seed Departments
-  console.log("Creating departments...");
+  // Ensure pgvector extension exists
+  try {
+    await pool.query("CREATE EXTENSION IF NOT EXISTS vector;");
+  } catch (err) {
+    console.warn("Notice: Could not automatically enable pgvector extension in seed script:", (err as Error).message);
+  }
+
+  // 1. Seed GBU Departments
+  console.log("1. Seeding GBU Departments...");
   const deptList = [
     {
-      name: "Electrical & Power Infrastructure",
+      name: "GBU Central Electrical Maintenance Division",
       code: "ELEC",
-      contactEmail: "electrical@campus.edu",
-      headName: "Er. Ramesh Sharma",
+      contactEmail: "electrical@gbu.ac.in",
+      headName: "Er. Ramesh Sharma (Executive Engineer)",
     },
     {
-      name: "Plumbing & Sanitation",
+      name: "GBU Campus Sanitation & Water Works",
       code: "PLUMB",
-      contactEmail: "plumbing@campus.edu",
-      headName: "Mr. Suresh Verma",
+      contactEmail: "waterworks@gbu.ac.in",
+      headName: "Mr. Suresh Verma (Superintendent)",
     },
     {
-      name: "IT & Campus Network Services",
+      name: "GBU Computer Center & Campus IT Cell (SOICT)",
       code: "IT",
-      contactEmail: "itsupport@campus.edu",
-      headName: "Dr. Ananya Roy",
+      contactEmail: "itcell@gbu.ac.in",
+      headName: "Dr. Ananya Roy (Director, IT)",
     },
     {
-      name: "Hostel & Mess Administration",
+      name: "GBU Council of Wardens & Hostel Administration",
       code: "HOSTEL",
-      contactEmail: "hosteladmin@campus.edu",
-      headName: "Col. Rajesh Nair",
+      contactEmail: "chiefwarden@gbu.ac.in",
+      headName: "Prof. Rajesh Nair (Chief Warden)",
     },
     {
-      name: "General Campus Administration",
+      name: "GBU Academic & Examination Affairs",
+      code: "ACAD",
+      contactEmail: "exam@gbu.ac.in",
+      headName: "Dean of Academic Affairs",
+    },
+    {
+      name: "GBU Central Administration (Registrar Office)",
       code: "GEN",
-      contactEmail: "admin@campus.edu",
-      headName: "Dean of Student Affairs",
+      contactEmail: "registrar@gbu.ac.in",
+      headName: "Registrar, GBU",
     },
   ];
 
-  const seededDepts = await db
+  await db
     .insert(departments)
     .values(deptList)
-    .onConflictDoNothing({ target: departments.code })
-    .returning();
+    .onConflictDoNothing({ target: departments.code });
 
   const allDepts = await db.select().from(departments);
   const deptMap = new Map(allDepts.map((d) => [d.code, d.id]));
 
-  // 2. Seed Users
-  console.log("Creating default seed users...");
+  // 2. Seed GBU CSMS / Samarth Master Student Roster
+  console.log("2. Seeding GBU CSMS / Samarth Student Roster...");
+  const rosterList = [
+    {
+      enrollmentNo: "22/ICS/045",
+      fullName: "Abhishek Sajwan",
+      school: "School of ICT (SOICT)",
+      program: "B.Tech Computer Science & Engineering",
+      hostelBlock: "Birsa Munda Hostel",
+      roomNo: "B-204",
+      registeredEmail: "abhishek.sajwan@gbu.ac.in",
+      isClaimed: true, // Pre-activated for demo
+    },
+    {
+      enrollmentNo: "22/ICS/012",
+      fullName: "Aarav Sharma",
+      school: "School of ICT (SOICT)",
+      program: "B.Tech Computer Science & Engineering",
+      hostelBlock: "Sant Kabir Hostel",
+      roomNo: "A-108",
+      registeredEmail: "aarav.sharma@gbu.ac.in",
+      isClaimed: true, // Pre-activated for demo
+    },
+    {
+      enrollmentNo: "23/SOE/034",
+      fullName: "Priya Patel",
+      school: "School of Engineering (SOE)",
+      program: "B.Tech Mechanical Engineering",
+      hostelBlock: "Mahamaya Hostel",
+      roomNo: "C-302",
+      registeredEmail: "priya.patel@gbu.ac.in",
+      isClaimed: true, // Pre-activated for demo
+    },
+    {
+      // UNCLAIMED FOR LIVE VIVA DEMO!
+      enrollmentNo: "23/SOBT/019",
+      fullName: "Rohan Verma",
+      school: "School of Biotechnology (SOBT)",
+      program: "B.Tech Biotechnology",
+      hostelBlock: "Birsa Munda Hostel",
+      roomNo: "B-110",
+      registeredEmail: "rohan.verma@gbu.ac.in",
+      isClaimed: false, // Type this live during your viva to show fresh student registration!
+    },
+    {
+      // UNCLAIMED FOR LIVE VIVA DEMO!
+      enrollmentNo: "22/SOM/008",
+      fullName: "Sneha Rao",
+      school: "School of Management (SOM)",
+      program: "MBA (Finance & Analytics)",
+      hostelBlock: "Rani Laxmibai Hostel",
+      roomNo: "D-104",
+      registeredEmail: "sneha.rao@gbu.ac.in",
+      isClaimed: false,
+    },
+  ];
+
+  await db
+    .insert(gbuStudentRoster)
+    .values(rosterList)
+    .onConflictDoNothing({ target: gbuStudentRoster.enrollmentNo });
+
+  // 3. Seed Users (Admin, Staff, and Verified GBU Students)
+  console.log("3. Seeding User Accounts (Admin, Staff, Students)...");
   const passwordHash = await bcrypt.hash("Password@123", 10);
 
   const usersList = [
     {
-      name: "Admin Officer",
-      email: "admin@campus.edu",
+      name: "GBU Chief Proctor / Admin",
+      email: "admin@gbu.ac.in",
       passwordHash,
-      role: "ADMIN",
+      role: "ADMIN" as const,
       departmentId: deptMap.get("GEN"),
+      phone: "+91 120 2344000",
+    },
+    {
+      name: "Er. Ramesh Sharma (Electrical Staff)",
+      email: "staff.elec@gbu.ac.in",
+      passwordHash,
+      role: "STAFF" as const,
+      departmentId: deptMap.get("ELEC"),
+      phone: "+91 120 2344001",
+    },
+    {
+      name: "Abhishek Sajwan",
+      email: "abhishek.sajwan@gbu.ac.in",
+      passwordHash,
+      role: "STUDENT" as const,
+      enrollmentNo: "22/ICS/045",
+      school: "School of ICT (SOICT)",
+      hostelBlock: "Birsa Munda Hostel",
+      roomNo: "B-204",
       phone: "+91 9876543210",
     },
     {
-      name: "Electrical Supervisor",
-      email: "staff.elec@campus.edu",
+      name: "Aarav Sharma",
+      email: "aarav.sharma@gbu.ac.in",
       passwordHash,
-      role: "STAFF",
-      departmentId: deptMap.get("ELEC"),
+      role: "STUDENT" as const,
+      enrollmentNo: "22/ICS/012",
+      school: "School of ICT (SOICT)",
+      hostelBlock: "Sant Kabir Hostel",
+      roomNo: "A-108",
       phone: "+91 9876543211",
     },
     {
-      name: "Aarav Sharma",
-      email: "student@campus.edu",
-      passwordHash,
-      role: "STUDENT",
-      phone: "+91 9876543212",
-    },
-    {
       name: "Priya Patel",
-      email: "priya@campus.edu",
+      email: "priya.patel@gbu.ac.in",
       passwordHash,
-      role: "STUDENT",
-      phone: "+91 9876543213",
+      role: "STUDENT" as const,
+      enrollmentNo: "23/SOE/034",
+      school: "School of Engineering (SOE)",
+      hostelBlock: "Mahamaya Hostel",
+      roomNo: "C-302",
+      phone: "+91 9876543212",
     },
   ];
 
@@ -95,62 +190,61 @@ async function seed() {
 
   const allUsers = await db.select().from(users);
   const adminUser = allUsers.find((u) => u.role === "ADMIN")!;
-  const studentUser = allUsers.find((u) => u.email === "student@campus.edu")!;
-  const priyaUser = allUsers.find((u) => u.email === "priya@campus.edu")!;
+  const abhishekUser = allUsers.find((u) => u.email === "abhishek.sajwan@gbu.ac.in")!;
+  const priyaUser = allUsers.find((u) => u.email === "priya.patel@gbu.ac.in")!;
 
-  // 3. Seed Realistic Complaints
-  console.log("Seeding realistic sample complaints...");
+  // 4. Seed Realistic GBU Campus Complaints
+  console.log("4. Seeding Realistic GBU Campus Complaints...");
 
   const sampleComplaints = [
     {
-      ticketNumber: "CMP-2026-EL01",
-      title: "Ceiling fan stopped working in Room 204",
-      description: "The fan in room 204 stopped working yesterday afternoon. Regulating speed does not work either. We already reported twice to caretaker.",
-      location: "Room 204, Boys Hostel B",
-      studentId: studentUser.id,
-      status: "IN_PROGRESS",
+      ticketNumber: "GBU-2026-EL01",
+      title: "Ceiling fan stopped working in Room B-204",
+      description: "The ceiling fan in Room B-204 stopped spinning yesterday evening. It is making a loud humming noise. Caretaker was notified twice.",
+      location: "Room B-204, Birsa Munda Hostel",
+      studentId: abhishekUser.id,
+      status: "IN_PROGRESS" as const,
     },
     {
-      ticketNumber: "CMP-2026-EL02",
-      title: "Ceiling fan in room 204 has completely halted",
-      description: "Fan in room 204 stopped spinning and making humming noise. Needs urgent replacement or capacitor repair.",
-      location: "Room 204, Boys Hostel B",
+      ticketNumber: "GBU-2026-EL02",
+      title: "Ceiling fan completely halted in Room B-204",
+      description: "Fan in room 204 has halted and regulator dial is unresponsive. Capacitor needs replacement.",
+      location: "Room B-204, Birsa Munda Hostel",
       studentId: priyaUser.id,
-      status: "SUBMITTED", // Duplicate match for EL01!
+      status: "SUBMITTED" as const, // Duplicate match for EL01 (Demonstrates Similarity Search!)
     },
     {
-      ticketNumber: "CMP-2026-CR01",
-      title: "Exposed wire sparking in Physics Lab 3",
-      description: "Severe hazard! The junction box near workbench 4 is sparking with visible smoke and burnt smell. Please cut the power!",
-      location: "Physics Lab 3, Science Block Ground Floor",
-      studentId: studentUser.id,
-      status: "SUBMITTED",
+      ticketNumber: "GBU-2026-CR01",
+      title: "Exposed junction wire sparking near Lab 3 switchboard",
+      description: "Severe hazard! High-voltage sparking with burning smell near Workbench 4 in SOICT Lab 3. Please cut main breaker immediately!",
+      location: "SOICT Building, 1st Floor, Computer Lab 3",
+      studentId: abhishekUser.id,
+      status: "SUBMITTED" as const, // Critical priority (6-hour SLA)
     },
     {
-      ticketNumber: "CMP-2026-PL01",
-      title: "Continuous water tap leakage in 2nd floor washroom",
-      description: "Tap is broken and leaking continuously for 3 days, causing floor flooding and slippery conditions.",
-      location: "2nd Floor Washroom, Academic Block C",
+      ticketNumber: "GBU-2026-PL01",
+      title: "Water tap leakage causing flooding on 2nd floor",
+      description: "Washroom tap on 2nd floor is broken and continuously running, causing water accumulation and slippery floor.",
+      location: "Mahamaya Girls Hostel, 2nd Floor Washroom",
       studentId: priyaUser.id,
-      status: "SUBMITTED",
+      status: "SUBMITTED" as const,
     },
     {
-      ticketNumber: "CMP-2026-IT01",
-      title: "Wi-Fi access point dead before midterm examinations",
-      description: "No internet connection in Library reading room for past 6 hours. SSIDs are not visible on any student device.",
+      ticketNumber: "GBU-2026-IT01",
+      title: "Campus Wi-Fi AP disconnected before midterm exams",
+      description: "No internet connection in SOICT Central Library Reading Hall. GBU-WiFi SSID is inaccessible on all student laptops.",
       location: "Central Library 1st Floor Reading Room",
-      studentId: studentUser.id,
-      status: "SUBMITTED",
+      studentId: abhishekUser.id,
+      status: "SUBMITTED" as const,
     },
     {
-      ticketNumber: "CMP-2026-OV01",
-      title: "Room water dispenser filter smells dusty",
-      description: "Filter water in dispenser has stale smell, needs cartridge replacement and sanitization.",
-      location: "Hostel Mess Dining Hall",
+      ticketNumber: "GBU-2026-OV01",
+      title: "Drinking water dispenser filter smells dusty",
+      description: "Filter water in Birsa Munda Hostel mess dining hall dispenser has stale odor, needs cartridge replacement.",
+      location: "Birsa Munda Hostel Mess Dining Hall",
       studentId: priyaUser.id,
-      status: "IN_PROGRESS",
-      // We will override this one to demonstrate Human-in-the-Loop!
-      forceOverride: true,
+      status: "IN_PROGRESS" as const,
+      forceOverride: true, // Demonstrates Admin Human-in-the-Loop Override!
     },
   ];
 
@@ -159,18 +253,17 @@ async function seed() {
     const ai = AiService.simulateAiResponse(text);
 
     let finalCategory = ai.category.value;
-    let finalPriority = ai.priority.value;
+    let finalPriority: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW" = ai.priority.value;
     let isAiOverridden = false;
-    let overrideReason = null;
-    let overriddenById = null;
-    let overriddenAt = null;
+    let overrideReason: string | null = null;
+    let overriddenById: string | null = null;
+    let overriddenAt: Date | null = null;
 
     if (item.forceOverride) {
-      // Human overrides AI from General/Hostel to Plumbing & Sanitation
       isAiOverridden = true;
       finalCategory = "Plumbing";
       finalPriority = "MEDIUM";
-      overrideReason = "Water filter sanitation falls under Plumbing & Sanitation division protocol";
+      overrideReason = "Water filtration cartridge sanitation falls under Campus Water Works protocol";
       overriddenById = adminUser.id;
       overriddenAt = new Date();
     }
@@ -222,13 +315,13 @@ async function seed() {
         {
           complaintId: created.id,
           actorId: item.studentId,
-          action: "SUBMITTED",
-          note: "Complaint submitted via student portal",
+          action: "SUBMITTED" as const,
+          note: `Complaint filed by verified GBU student at ${item.location}`,
         },
         {
           complaintId: created.id,
           actorId: null,
-          action: "AI_ANALYZED",
+          action: "AI_ANALYZED" as const,
           note: `AI classified as "${ai.category.value}" (${(ai.category.confidence * 100).toFixed(0)}%) with priority "${ai.priority.value}". SLA set to ${slaHours}h.`,
         },
         ...(isAiOverridden
@@ -236,7 +329,7 @@ async function seed() {
               {
                 complaintId: created.id,
                 actorId: adminUser.id,
-                action: "AI_OVERRIDDEN",
+                action: "AI_OVERRIDDEN" as const,
                 note: `Admin override applied: "${overrideReason}"`,
               },
             ]
@@ -245,12 +338,18 @@ async function seed() {
     }
   }
 
-  console.log("✅ Seed completed successfully!");
+  console.log("=================================================");
+  console.log("✅ GBU DATABASE SEED COMPLETED SUCCESSFULLY!");
+  console.log("=================================================");
+  console.log("📋 Verified GBU Test Credentials:");
+  console.log("  Admin:     admin@gbu.ac.in        / Password@123");
+  console.log("  Staff:     staff.elec@gbu.ac.in   / Password@123");
+  console.log("  Student 1: abhishek.sajwan@gbu.ac.in (22/ICS/045) / Password@123");
+  console.log("  Student 2: priya.patel@gbu.ac.in     (23/SOE/034) / Password@123");
   console.log("-------------------------------------------------");
-  console.log("Default credentials to test:");
-  console.log("  Admin:   admin@campus.edu   / Password@123");
-  console.log("  Student: student@campus.edu / Password@123");
-  console.log("  Staff:   staff.elec@campus.edu / Password@123");
+  console.log("🎯 Unclaimed GBU Enrollment for LIVE VIVA DEMO:");
+  console.log("  Enrollment No: 23/SOBT/019 (Rohan Verma, School of Biotech)");
+  console.log("  OTP for Demo:  123456 (or check terminal log)");
   console.log("=================================================");
   await pool.end();
 }
