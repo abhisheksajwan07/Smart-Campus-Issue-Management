@@ -44,6 +44,33 @@
         },
         {
           "name": "02 - Register Student (with OTP)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let token = pm.cookies.get('token');",
+                  "if (!token) {",
+                  "  const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "  if (setCookie) {",
+                  "    const match = setCookie.match(/token=([^;]+)/);",
+                  "    if (match) token = match[1];",
+                  "  }",
+                  "}",
+                  "if (!token) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.data && json.data.accessToken) {",
+                  "    token = json.data.accessToken;",
+                  "  }",
+                  "}",
+                  "if (token) {",
+                  "  pm.collectionVariables.set('token', token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "Content-Type", "value": "application/json" }],
@@ -61,9 +88,22 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.accessToken) {",
-                  "  pm.collectionVariables.set('token', json.data.accessToken);",
+                  "let token = pm.cookies.get('token');",
+                  "if (!token) {",
+                  "  const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "  if (setCookie) {",
+                  "    const match = setCookie.match(/token=([^;]+)/);",
+                  "    if (match) token = match[1];",
+                  "  }",
+                  "}",
+                  "if (!token) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.data && json.data.accessToken) {",
+                  "    token = json.data.accessToken;",
+                  "  }",
+                  "}",
+                  "if (token) {",
+                  "  pm.collectionVariables.set('token', token);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -87,9 +127,22 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.accessToken) {",
-                  "  pm.collectionVariables.set('token', json.data.accessToken);",
+                  "let token = pm.cookies.get('token');",
+                  "if (!token) {",
+                  "  const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "  if (setCookie) {",
+                  "    const match = setCookie.match(/token=([^;]+)/);",
+                  "    if (match) token = match[1];",
+                  "  }",
+                  "}",
+                  "if (!token) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.data && json.data.accessToken) {",
+                  "    token = json.data.accessToken;",
+                  "  }",
+                  "}",
+                  "if (token) {",
+                  "  pm.collectionVariables.set('token', token);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -113,9 +166,22 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "const json = pm.response.json();",
-                  "if (json.data && json.data.accessToken) {",
-                  "  pm.collectionVariables.set('token', json.data.accessToken);",
+                  "let token = pm.cookies.get('token');",
+                  "if (!token) {",
+                  "  const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "  if (setCookie) {",
+                  "    const match = setCookie.match(/token=([^;]+)/);",
+                  "    if (match) token = match[1];",
+                  "  }",
+                  "}",
+                  "if (!token) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.data && json.data.accessToken) {",
+                  "    token = json.data.accessToken;",
+                  "  }",
+                  "}",
+                  "if (token) {",
+                  "  pm.collectionVariables.set('token', token);",
                   "}"
                 ],
                 "type": "text/javascript"
@@ -142,22 +208,61 @@
         },
         {
           "name": "07 - Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "let token = pm.cookies.get('token');",
+                  "if (!token) {",
+                  "  const setCookie = pm.response.headers.get('Set-Cookie');",
+                  "  if (setCookie) {",
+                  "    const match = setCookie.match(/token=([^;]+)/);",
+                  "    if (match) token = match[1];",
+                  "  }",
+                  "}",
+                  "if (!token) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.data && json.data.accessToken) {",
+                  "    token = json.data.accessToken;",
+                  "  }",
+                  "}",
+                  "if (token) {",
+                  "  pm.collectionVariables.set('token', token);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
-            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "header": [],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"refreshToken\": \"paste_token_here\"\n}"
+              "mode": "none"
             },
-            "url": { "raw": "{{baseUrl}}/auth/refresh-token" }
+            "url": { "raw": "{{baseUrl}}/auth/refresh-token" },
+            "description": "Rotates access and refresh tokens. Postman sends the refreshToken httpOnly cookie automatically. No request body is required."
           }
         },
         {
           "name": "08 - Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.collectionVariables.set('token', '');"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
           "request": {
             "method": "POST",
             "header": [{ "key": "Authorization", "value": "Bearer {{token}}" }],
-            "url": { "raw": "{{baseUrl}}/auth/logout" }
+            "url": { "raw": "{{baseUrl}}/auth/logout" },
+            "description": "Logs out user, clears httpOnly cookies, revokes session in Redis, and resets Postman token variable."
           }
         }
       ]

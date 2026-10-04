@@ -9,8 +9,8 @@ export async function authenticateToken(
   res: Response,
   next: NextFunction
 ): Promise<void> {
-  // 1. Read token from httpOnly cookies
-  let token = req.cookies?.token || req.cookies?.accessToken || null;
+  // 1. Read access token from httpOnly cookie (cookie is always named 'token')
+  let token = req.cookies?.token || null;
 
   // 2. Fallback to Authorization: Bearer <token> header
   if (!token) {
@@ -44,12 +44,13 @@ export async function authenticateToken(
       return;
     }
 
-    // 2. Verify JWT signature (try ACCESS_SECRET first, fallback to JWT_SECRET)
+    // 2. Verify JWT signature against ACCESS_SECRET
     let decoded: TokenPayload;
     try {
       decoded = jwt.verify(token, ENV.JWT_ACCESS_SECRET) as TokenPayload;
     } catch {
-      decoded = jwt.verify(token, ENV.JWT_SECRET) as TokenPayload;
+      // Token is invalid or expired — do not fallback to other secrets
+      throw new Error("Token verification failed");
     }
 
     req.user = decoded;

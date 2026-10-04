@@ -1,4 +1,4 @@
-import { Request, Response } from "express";
+import { Request, Response, CookieOptions } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { z } from "zod";
@@ -41,7 +41,7 @@ export const loginSchema = z.object({
 });
 
 export const refreshTokenSchema = z.object({
-  refreshToken: z.string().min(10, "Refresh token is required").optional(),
+  refreshToken: z.string().optional(),
 });
 
 function maskEmail(email: string): string {
@@ -55,47 +55,60 @@ function maskEmail(email: string): string {
 
 export class AuthController {
   /**
+   * Helper to build consistent cookie configuration across set and clear operations
+   */
+  private static getCookieBaseOptions(): CookieOptions {
+    const isProd = ENV.NODE_ENV === "production";
+    const sameSiteMode: "none" | "lax" | "strict" = (ENV.COOKIE_SAMESITE as any) || "lax";
+
+    return {
+      httpOnly: true,
+      // Browsers mandate secure: true whenever sameSite is 'none'
+      secure: sameSiteMode === "none" ? true : isProd,
+      sameSite: sameSiteMode,
+      domain: ENV.COOKIE_DOMAIN || undefined,
+      path: "/",
+    };
+  }
+
+  /**
    * Secure Cookie Architecture:
    * Sets httpOnly cookies on the response, keeping tokens safe from XSS attacks.
+   * Access Token cookie expires in 15 minutes (matching JWT_ACCESS_EXPIRES_IN).
+   * Refresh Token cookie expires in 7 days (matching JWT_REFRESH_EXPIRES_IN).
    */
   public static setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken?: string }): void {
-    const isProd = ENV.NODE_ENV === "production";
+    const baseOptions = AuthController.getCookieBaseOptions();
 
-    // Set primary token cookie (httpOnly)
+    // Set primary access token cookie (httpOnly) - 15 minutes
     res.cookie("token", tokens.accessToken, {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? "none" : "lax",
-      expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      ...baseOptions,
+      maxAge: 15 * 60 * 1000, // 15 mins
     });
 
     if (tokens.refreshToken) {
+      // Set long-lived refresh token cookie (httpOnly) - 7 days
       res.cookie("refreshToken", tokens.refreshToken, {
-        httpOnly: true,
-        secure: isProd,
-        sameSite: isProd ? "none" : "lax",
-        expires: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        ...baseOptions,
+        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
       });
     }
   }
 
   /**
-   * Clears auth cookies on logout
+   * Clears auth cookies on logout with matching domain/path settings
    */
   public static clearAuthCookies(res: Response): void {
-    const isProd = ENV.NODE_ENV === "production";
-    const sameSiteMode: "none" | "lax" = isProd ? "none" : "lax";
-    const clearOptions = {
-      httpOnly: true,
-      secure: isProd,
-      sameSite: sameSiteMode,
+    const baseOptions = AuthController.getCookieBaseOptions();
+    const clearOptions: CookieOptions = {
+      ...baseOptions,
       expires: new Date(0),
     };
 
-    res.cookie("token", null, clearOptions);
-    res.cookie("refreshToken", null, clearOptions);
-    res.clearCookie("token", { httpOnly: true, sameSite: isProd ? "none" : "lax", secure: isProd });
-    res.clearCookie("refreshToken", { httpOnly: true, sameSite: isProd ? "none" : "lax", secure: isProd });
+    res.cookie("token", "", clearOptions);
+    res.cookie("refreshToken", "", clearOptions);
+    res.clearCookie("token", baseOptions);
+    res.clearCookie("refreshToken", baseOptions);
   }
 
   /**
@@ -318,7 +331,17 @@ export class AuthController {
           hostelBlock: rosterRecord.hostelBlock,
           roomNo: rosterRecord.roomNo,
         })
-        .returning();
+        .returning({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          role: users.role,
+          enrollmentNo: users.enrollmentNo,
+          school: users.school,
+          hostelBlock: users.hostelBlock,
+          roomNo: users.roomNo,
+          createdAt: users.createdAt,
+        });
 
       // Mark roster record as claimed & clear OTP
       await db
@@ -358,9 +381,7 @@ export class AuthController {
             hostelBlock: newUser.hostelBlock,
             roomNo: newUser.roomNo,
           },
-          token: tokens.accessToken,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
+          // Auth is handled via httpOnly cookies. No tokens exposed in JSON.
         },
       });
     } catch (err) {
@@ -430,9 +451,7 @@ export class AuthController {
         message: "User registered successfully",
         data: {
           user: newUser,
-          token: tokens.accessToken,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
+          // Auth is handled via httpOnly cookies. No tokens exposed in JSON.
         },
       });
     } catch (err) {
@@ -525,9 +544,7 @@ export class AuthController {
             hostelBlock: user.hostelBlock,
             roomNo: user.roomNo,
           },
-          token: tokens.accessToken,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
+          // Auth is handled via httpOnly cookies. No tokens exposed in JSON.
         },
       });
     } catch (err) {
@@ -588,9 +605,13 @@ export class AuthController {
    */
   static async refreshToken(req: Request, res: Response): Promise<void> {
     try {
-      const refreshToken = req.body?.refreshToken || req.cookies?.refreshToken;
+      // Read refresh token from httpOnly cookie (preferred) or request body (fallback for API clients)
+      const refreshToken = req.cookies?.refreshToken || req.body?.refreshToken;
       if (!refreshToken) {
-        res.status(400).json({ success: false, message: "Refresh token is required in request body or cookie." });
+        res.status(400).json({
+          success: false,
+          message: "Refresh token is missing. Please log in again or provide refreshToken in request body.",
+        });
         return;
       }
 
@@ -615,9 +636,19 @@ export class AuthController {
         return;
       }
 
-      // Fetch user profile for token payload
+      // Fetch user profile for token payload — select only safe fields (no passwordHash)
       const [user] = await db
-        .select()
+        .select({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          role: users.role,
+          departmentId: users.departmentId,
+          enrollmentNo: users.enrollmentNo,
+          school: users.school,
+          hostelBlock: users.hostelBlock,
+          roomNo: users.roomNo,
+        })
         .from(users)
         .where(eq(users.id, decoded.userId))
         .limit(1);
@@ -648,11 +679,7 @@ export class AuthController {
       res.status(200).json({
         success: true,
         message: "Token refreshed successfully",
-        data: {
-          token: tokens.accessToken,
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-        },
+        // Auth is handled via httpOnly cookies. No tokens exposed in JSON.
       });
     } catch (err) {
       console.error("Refresh token error:", err);

@@ -25,5 +25,8 @@ export const ENV = {
   FASTAPI_URL: process.env.FASTAPI_URL || "http://localhost:8000",
   FASTAPI_TIMEOUT_MS: parseInt(process.env.FASTAPI_TIMEOUT_MS || "5000", 10),
   USE_MOCK_AI: process.env.USE_MOCK_AI === "true",
+  // Allowed CORS Origins & Cookie Configuration
   CORS_ORIGIN: (process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:3000").split(","),
+  COOKIE_DOMAIN: process.env.COOKIE_DOMAIN || undefined,
+  COOKIE_SAMESITE: (process.env.COOKIE_SAMESITE as "lax" | "strict" | "none") || "lax",
 };

@@ -2,30 +2,63 @@ import { db } from "../config/database";
 import { departments } from "../db/schema";
 import { eq, ilike } from "drizzle-orm";
 
+// Explicit mapping from Python ML categories to PostgreSQL department codes
+const ML_CATEGORY_TO_DEPT_CODE: Record<string, string> = {
+  // Python ML classes & immediate hazard checks
+  "Electrical Maintenance": "ELEC",
+  "Plumbing & Sanitation": "PLUMB",
+  "IT & Digital Services": "IT",
+  "Hostel & Accommodation": "HOSTEL",
+  "Academic & Courses": "ACAD",
+  "Exams & Assessment": "ACAD",
+  "Library": "ACAD",
+  "Internships & Placements": "ACAD",
+  "Administration & Documents": "GEN",
+  "Student Activities & Events": "GEN",
+  "Transport & Parking": "GEN",
+  "Campus Facilities & Maintenance": "GEN",
+
+  // Simulator / Fallback categories
+  "Electrical": "ELEC",
+  "Plumbing": "PLUMB",
+  "IT / Network": "IT",
+  "Hostel / Mess": "HOSTEL",
+  "Academic": "ACAD",
+  "General": "GEN",
+};
+
 export class RoutingService {
   /**
-   * Maps a complaint category to the appropriate department code
+   * Maps an ML predicted complaint category to the appropriate department code (e.g. "ELEC", "PLUMB", "IT")
    */
   static getDepartmentCodeForCategory(category: string): string {
-    const cat = (category || "").toLowerCase();
+    const trimmed = (category || "").trim();
 
-    if (cat.includes("electric") || cat.includes("fan") || cat.includes("light") || cat.includes("power") || cat.includes("wire") || cat.includes("switch")) {
-      return "ELEC";
+    // 1. Direct dictionary match (case-insensitive)
+    for (const [mlName, code] of Object.entries(ML_CATEGORY_TO_DEPT_CODE)) {
+      if (mlName.toLowerCase() === trimmed.toLowerCase()) {
+        return code;
+      }
     }
-    if (cat.includes("plumb") || cat.includes("water") || cat.includes("tap") || cat.includes("drain") || cat.includes("toilet") || cat.includes("leak")) {
-      return "PLUMB";
-    }
-    if (cat.includes("it") || cat.includes("network") || cat.includes("wifi") || cat.includes("internet") || cat.includes("router") || cat.includes("lan") || cat.includes("server") || cat.includes("digital")) {
-      return "IT";
-    }
-    if (cat.includes("hostel") || cat.includes("mess") || cat.includes("food") || cat.includes("room") || cat.includes("bed") || cat.includes("cleaning") || cat.includes("accommod")) {
-      return "HOSTEL";
-    }
-    if (cat.includes("acad") || cat.includes("exam") || cat.includes("course") || cat.includes("grade") || cat.includes("mark") || cat.includes("attend") || cat.includes("admit") || cat.includes("library") || cat.includes("placement") || cat.includes("intern")) {
+
+    // 2. Substring fallback for category variations
+    const lower = trimmed.toLowerCase();
+    if (lower.includes("electric")) return "ELEC";
+    if (lower.includes("plumb")) return "PLUMB";
+    if (lower.includes("it") || lower.includes("digital") || lower.includes("network")) return "IT";
+    if (lower.includes("hostel") || lower.includes("mess") || lower.includes("accommod")) return "HOSTEL";
+    if (
+      lower.includes("acad") ||
+      lower.includes("exam") ||
+      lower.includes("course") ||
+      lower.includes("library") ||
+      lower.includes("placement")
+    ) {
       return "ACAD";
     }
-    return "GEN"; // Default to General Administration
 
+    // Default to Central Administration
+    return "GEN";
   }
 
   /**
