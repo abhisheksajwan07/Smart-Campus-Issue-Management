@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { db } from "../config/database";
 import { complaints, departments } from "../db/schema";
-import { sql, eq } from "drizzle-orm";
 import { SlaService } from "../services/slaService";
 
 export class AnalyticsController {

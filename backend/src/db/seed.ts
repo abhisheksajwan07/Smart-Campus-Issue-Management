@@ -2,6 +2,7 @@ import bcrypt from "bcryptjs";
 import { db, pool } from "../config/database";
 import { users, departments, complaints, complaintTimeline, gbuStudentRoster } from "./schema";
 import { AiService } from "../services/aiService";
+import { RoutingService } from "../services/routingService";
 import { SlaService } from "../services/slaService";
 
 async function seed() {
@@ -261,21 +262,15 @@ async function seed() {
 
     if (item.forceOverride) {
       isAiOverridden = true;
-      finalCategory = "Plumbing";
+      finalCategory = "Plumbing & Sanitation";
       finalPriority = "MEDIUM";
       overrideReason = "Water filtration cartridge sanitation falls under Campus Water Works protocol";
       overriddenById = adminUser.id;
       overriddenAt = new Date();
     }
 
-    const targetDeptId =
-      finalCategory === "Electrical"
-        ? deptMap.get("ELEC")
-        : finalCategory === "Plumbing"
-        ? deptMap.get("PLUMB")
-        : finalCategory === "IT / Network"
-        ? deptMap.get("IT")
-        : deptMap.get("HOSTEL");
+    const deptCode = RoutingService.getDepartmentCodeForCategory(finalCategory);
+    const targetDeptId = deptMap.get(deptCode) || deptMap.get("GEN")!;
 
     const slaHours = SlaService.getSlaHours(finalPriority);
     const slaDeadlineAt = SlaService.computeDeadline(finalPriority);

@@ -6,7 +6,7 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true 
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
 export const ENV = {
-  PORT: parseInt(process.env.PORT || "5000", 10),
+  PORT: parseInt(process.env.PORT || "5000", 10) || 5000,
   NODE_ENV: process.env.NODE_ENV || "development",
   DATABASE_URL: process.env.DATABASE_URL || "postgresql://postgres:postgres@localhost:5432/smart_campus",
   REDIS_URL: process.env.REDIS_URL || "redis://localhost:6379",
@@ -23,7 +23,7 @@ export const ENV = {
   EMAIL_FROM: process.env.EMAIL_FROM || "Smart Campus <onboarding@resend.dev>",
 
   FASTAPI_URL: process.env.FASTAPI_URL || "http://localhost:8000",
-  FASTAPI_TIMEOUT_MS: parseInt(process.env.FASTAPI_TIMEOUT_MS || "5000", 10),
+  FASTAPI_TIMEOUT_MS: parseInt(process.env.FASTAPI_TIMEOUT_MS || "5000", 10) || 5000,
   USE_MOCK_AI: process.env.USE_MOCK_AI === "true",
   // Allowed CORS Origins & Cookie Configuration
   CORS_ORIGIN: (process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:3000").split(","),

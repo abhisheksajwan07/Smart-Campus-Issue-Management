@@ -3,7 +3,7 @@ import { z } from "zod";
 import { db } from "../config/database";
 import { gbuStudentRoster } from "../db/schema";
 import { AuthenticatedRequest } from "../types";
-import { ilike, or, desc, sql } from "drizzle-orm";
+import { ilike, or, desc, sql, and, eq } from "drizzle-orm";
 
 export const rosterItemSchema = z.object({
   enrollmentNo: z.string().min(3, "Enrollment number is required"),
@@ -90,7 +90,7 @@ export class RosterController {
    */
   static async listRoster(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
-      const { search, school } = req.query;
+      const { search, school, isClaimed } = req.query;
 
       const conditions = [];
 
@@ -108,9 +108,14 @@ export class RosterController {
         conditions.push(ilike(gbuStudentRoster.school, `%${school}%`));
       }
 
+      if (isClaimed === "true" || isClaimed === "false") {
+        conditions.push(eq(gbuStudentRoster.isClaimed, isClaimed === "true"));
+      }
+
       const list = await db
         .select()
         .from(gbuStudentRoster)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(desc(gbuStudentRoster.createdAt))
         .limit(100);
 

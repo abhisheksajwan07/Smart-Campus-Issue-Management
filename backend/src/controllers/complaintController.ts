@@ -3,13 +3,28 @@ import { Response } from "express";
 import { z } from "zod";
 import { db } from "../config/database";
 import { complaints, complaintTimeline, departments, users } from "../db/schema";
-import { eq, desc, and, or, ilike } from "drizzle-orm";
+import { eq, desc, and, or, ilike, sql } from "drizzle-orm";
 import { AuthenticatedRequest, PriorityLevel, ComplaintStatus } from "../types";
 import { AiService } from "../services/aiService";
 import { SlaService } from "../services/slaService";
 import { RoutingService } from "../services/routingService";
 import { findSimilarComplaints, SimilarComplaintMatch, DEFAULT_SIMILARITY_THRESHOLD } from "../services/similarityService";
 import { SSEService } from "../services/sseService";
+
+const VALID_STATUSES: readonly ComplaintStatus[] = [
+  "SUBMITTED",
+  "IN_PROGRESS",
+  "RESOLVED",
+  "REJECTED",
+  "ESCALATED",
+];
+const VALID_PRIORITIES: readonly PriorityLevel[] = ["CRITICAL", "HIGH", "MEDIUM", "LOW"];
+const uuidSchema = z.string().uuid();
+
+function stripEmbedding<T extends { embedding?: unknown }>(complaint: T): Omit<T, "embedding"> {
+  const { embedding: _embedding, ...safeComplaint } = complaint;
+  return safeComplaint;
+}
 
 export const createComplaintSchema = z.object({
   title: z.string().min(5, "Title must be at least 5 characters"),
@@ -24,7 +39,7 @@ export const updateStatusSchema = z.object({
 });
 
 export const overrideAiSchema = z.object({
-  category: z.string().optional(),
+  category: z.string().trim().min(1, "Category cannot be empty").max(100, "Category too long").optional(),
   priority: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional(),
   overrideReason: z.string().min(3, "Please provide an explanation for overriding the AI result"),
 });
@@ -136,9 +151,11 @@ export class ComplaintController {
         console.warn("Non-critical: Similarity search failed, continuing without duplicate suggestions:", simErr);
       }
 
+      const safeComplaint = stripEmbedding(newComplaint);
+
       // 8. Broadcast Real-Time SSE Event to All Connected Admin Dashboards
       SSEService.broadcast("NEW_COMPLAINT", {
-        complaint: newComplaint,
+        complaint: safeComplaint,
         similarComplaints,
       });
 
@@ -146,7 +163,7 @@ export class ComplaintController {
         success: true,
         message: "Complaint registered and analyzed by AI successfully",
         data: {
-          complaint: newComplaint,
+          complaint: safeComplaint,
           aiAnalysis: {
             predictedCategory,
             predictedPriority,
@@ -184,22 +201,48 @@ export class ComplaintController {
       // Students can only view their own complaints
       if (req.user.role === "STUDENT") {
         conditions.push(eq(complaints.studentId, req.user.userId));
-      } else if (req.user.role === "STAFF" && req.user.departmentId) {
-        // Staff see complaints assigned to their department
-        conditions.push(eq(complaints.assignedDepartmentId, req.user.departmentId));
+      } else if (req.user.role === "STAFF") {
+        // Staff see complaints assigned to their department (or directly assigned to them)
+        if (req.user.departmentId) {
+          conditions.push(eq(complaints.assignedDepartmentId, req.user.departmentId));
+        } else {
+          conditions.push(eq(complaints.assignedStaffId, req.user.userId));
+        }
       }
 
       if (status) {
-        conditions.push(eq(complaints.status, String(status) as ComplaintStatus));
+        const normalizedStatus = String(status).trim().toUpperCase() as ComplaintStatus;
+        if (!VALID_STATUSES.includes(normalizedStatus)) {
+          res.status(400).json({
+            success: false,
+            message: `Invalid status filter. Allowed values: ${VALID_STATUSES.join(", ")}`,
+          });
+          return;
+        }
+        conditions.push(eq(complaints.status, normalizedStatus));
       }
       if (priority) {
-        conditions.push(eq(complaints.finalPriority, String(priority) as PriorityLevel));
+        const normalizedPriority = String(priority).trim().toUpperCase() as PriorityLevel;
+        if (!VALID_PRIORITIES.includes(normalizedPriority)) {
+          res.status(400).json({
+            success: false,
+            message: `Invalid priority filter. Allowed values: ${VALID_PRIORITIES.join(", ")}`,
+          });
+          return;
+        }
+        conditions.push(eq(complaints.finalPriority, normalizedPriority));
       }
       if (category) {
-        conditions.push(eq(complaints.finalCategory, String(category)));
+        const normalizedCategory = String(category).trim();
+        conditions.push(sql`lower(${complaints.finalCategory}) = lower(${normalizedCategory})`);
       }
       if (departmentId) {
-        conditions.push(eq(complaints.assignedDepartmentId, String(departmentId)));
+        const deptIdStr = String(departmentId).trim();
+        if (!uuidSchema.safeParse(deptIdStr).success) {
+          res.status(400).json({ success: false, message: "Invalid departmentId format" });
+          return;
+        }
+        conditions.push(eq(complaints.assignedDepartmentId, deptIdStr));
       }
       if (search) {
         conditions.push(
@@ -220,6 +263,7 @@ export class ComplaintController {
           title: complaints.title,
           description: complaints.description,
           location: complaints.location,
+          imageUrl: complaints.imageUrl,
           status: complaints.status,
           finalCategory: complaints.finalCategory,
           finalPriority: complaints.finalPriority,
@@ -275,6 +319,10 @@ export class ComplaintController {
   static async getComplaintById(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const id = req.params.id as string;
+      if (!uuidSchema.safeParse(id).success) {
+        res.status(400).json({ success: false, message: "Invalid complaint ID format" });
+        return;
+      }
 
       const [complaint] = await db
         .select({
@@ -283,6 +331,7 @@ export class ComplaintController {
           title: complaints.title,
           description: complaints.description,
           location: complaints.location,
+          imageUrl: complaints.imageUrl,
           status: complaints.status,
           studentId: complaints.studentId,
           assignedDepartmentId: complaints.assignedDepartmentId,
@@ -322,9 +371,17 @@ export class ComplaintController {
         return;
       }
 
-      // Check permission for student
+      // Check permission for student or department-scoped staff
       if (req.user?.role === "STUDENT" && complaint.studentId !== req.user.userId) {
         res.status(403).json({ success: false, message: "Access forbidden" });
+        return;
+      }
+      if (
+        req.user?.role === "STAFF" &&
+        req.user.departmentId &&
+        complaint.assignedDepartmentId !== req.user.departmentId
+      ) {
+        res.status(403).json({ success: false, message: "Access forbidden for this department" });
         return;
       }
 
@@ -388,6 +445,10 @@ export class ComplaintController {
   static async updateStatus(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const id = req.params.id as string;
+      if (!uuidSchema.safeParse(id).success) {
+        res.status(400).json({ success: false, message: "Invalid complaint ID format" });
+        return;
+      }
       const { status, note } = req.body;
 
       const [existing] = await db
@@ -401,7 +462,22 @@ export class ComplaintController {
         return;
       }
 
-      const resolvedAt = status === "RESOLVED" ? new Date() : existing.resolvedAt;
+      if (
+        req.user?.role === "STAFF" &&
+        req.user.departmentId &&
+        existing.assignedDepartmentId !== req.user.departmentId
+      ) {
+        res.status(403).json({ success: false, message: "Access forbidden for this department" });
+        return;
+      }
+
+      const resolvedAt = status === "RESOLVED" ? new Date() : null;
+      const timelineAction =
+        status === "RESOLVED"
+          ? ("RESOLVED" as const)
+          : status === "ESCALATED"
+          ? ("ESCALATED" as const)
+          : ("STATUS_UPDATED" as const);
 
       // Atomic Transaction: Update complaint status + write audit timeline entry
       const updated = await db.transaction(async (tx) => {
@@ -418,26 +494,28 @@ export class ComplaintController {
         await tx.insert(complaintTimeline).values({
           complaintId: id,
           actorId: req.user?.userId || null,
-          action: status === "RESOLVED" ? "RESOLVED" as const : "STATUS_UPDATED" as const,
+          action: timelineAction,
           note: note || `Status transitioned to "${status}"`,
         });
 
         return complaintRow;
       });
 
+      const safeUpdated = stripEmbedding(updated);
+
       // Broadcast Real-Time SSE Event
       SSEService.broadcast("STATUS_UPDATED", {
         complaintId: id,
-        ticketNumber: updated.ticketNumber,
-        status: updated.status,
-        resolvedAt: updated.resolvedAt,
+        ticketNumber: safeUpdated.ticketNumber,
+        status: safeUpdated.status,
+        resolvedAt: safeUpdated.resolvedAt,
         note: note || `Status transitioned to "${status}"`,
       });
 
       res.status(200).json({
         success: true,
         message: `Status updated to ${status}`,
-        data: updated,
+        data: safeUpdated,
       });
     } catch (err) {
       console.error("Update status error:", err);
@@ -453,6 +531,10 @@ export class ComplaintController {
   static async overrideAi(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
       const id = req.params.id as string;
+      if (!uuidSchema.safeParse(id).success) {
+        res.status(400).json({ success: false, message: "Invalid complaint ID format" });
+        return;
+      }
       const { category, priority, overrideReason } = req.body;
 
       const [existing] = await db
@@ -463,6 +545,15 @@ export class ComplaintController {
 
       if (!existing) {
         res.status(404).json({ success: false, message: "Complaint not found" });
+        return;
+      }
+
+      if (
+        req.user?.role === "STAFF" &&
+        req.user.departmentId &&
+        existing.assignedDepartmentId !== req.user.departmentId
+      ) {
+        res.status(403).json({ success: false, message: "Access forbidden for this department" });
         return;
       }
 
@@ -478,9 +569,11 @@ export class ComplaintController {
       // If priority changed, recalculate SLA deadline from original complaint time
       let slaHours = existing.slaHours;
       let slaDeadlineAt = existing.slaDeadlineAt;
+      let isSlaBreached = existing.isSlaBreached;
       if (priority && priority !== existing.finalPriority) {
         slaHours = SlaService.getSlaHours(newPriority);
         slaDeadlineAt = SlaService.computeDeadline(newPriority, existing.createdAt);
+        isSlaBreached = SlaService.isBreached(slaDeadlineAt, existing.status, existing.resolvedAt);
       }
 
       // Atomic Transaction: Update overridden fields + write audit timeline entry
@@ -497,6 +590,7 @@ export class ComplaintController {
             assignedDepartmentId,
             slaHours,
             slaDeadlineAt,
+            isSlaBreached,
             updatedAt: new Date(),
           })
           .where(eq(complaints.id, id))
@@ -512,22 +606,24 @@ export class ComplaintController {
         return complaintRow;
       });
 
+      const safeUpdated = stripEmbedding(updated);
+
       // Broadcast Real-Time SSE Event
       SSEService.broadcast("AI_OVERRIDDEN", {
         complaintId: id,
-        ticketNumber: updated.ticketNumber,
-        finalCategory: updated.finalCategory,
-        finalPriority: updated.finalPriority,
+        ticketNumber: safeUpdated.ticketNumber,
+        finalCategory: safeUpdated.finalCategory,
+        finalPriority: safeUpdated.finalPriority,
         isAiOverridden: true,
-        slaHours: updated.slaHours,
-        slaDeadlineAt: updated.slaDeadlineAt,
+        slaHours: safeUpdated.slaHours,
+        slaDeadlineAt: safeUpdated.slaDeadlineAt,
         overrideReason,
       });
 
       res.status(200).json({
         success: true,
         message: "AI prediction successfully overridden. Routing and SLA recalculated.",
-        data: updated,
+        data: safeUpdated,
       });
     } catch (err) {
       console.error("Override AI error:", err);

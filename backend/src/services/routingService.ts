@@ -41,18 +41,39 @@ export class RoutingService {
       }
     }
 
-    // 2. Substring fallback for category variations
+    // 2. Substring fallback for category variations (word boundary on "it" avoids matching "sanitation"/"facilities")
     const lower = trimmed.toLowerCase();
     if (lower.includes("electric")) return "ELEC";
-    if (lower.includes("plumb")) return "PLUMB";
-    if (lower.includes("it") || lower.includes("digital") || lower.includes("network")) return "IT";
+    if (
+      lower.includes("plumb") ||
+      lower.includes("sanitation") ||
+      lower.includes("water") ||
+      lower.includes("drain") ||
+      lower.includes("sewage")
+    ) {
+      return "PLUMB";
+    }
+    if (
+      /\bit\b/.test(lower) ||
+      lower.includes("digital") ||
+      lower.includes("network") ||
+      lower.includes("wifi") ||
+      lower.includes("wi-fi") ||
+      lower.includes("internet") ||
+      lower.includes("portal") ||
+      lower.includes("lms") ||
+      lower.includes("erp")
+    ) {
+      return "IT";
+    }
     if (lower.includes("hostel") || lower.includes("mess") || lower.includes("accommod")) return "HOSTEL";
     if (
       lower.includes("acad") ||
       lower.includes("exam") ||
       lower.includes("course") ||
       lower.includes("library") ||
-      lower.includes("placement")
+      lower.includes("placement") ||
+      lower.includes("intern")
     ) {
       return "ACAD";
     }
@@ -75,14 +96,26 @@ export class RoutingService {
 
       if (dept) return dept.id;
 
-      // Fallback: search by name ilike
+      // Fallback 1: search by department name
       const [fallback] = await db
         .select({ id: departments.id })
         .from(departments)
         .where(ilike(departments.name, `%${category}%`))
         .limit(1);
 
-      return fallback ? fallback.id : null;
+      if (fallback) return fallback.id;
+
+      // Fallback 2: route to GEN department if specific department wasn't seeded
+      if (code !== "GEN") {
+        const [genDept] = await db
+          .select({ id: departments.id })
+          .from(departments)
+          .where(eq(departments.code, "GEN"))
+          .limit(1);
+        if (genDept) return genDept.id;
+      }
+
+      return null;
     } catch (err) {
       console.error("Error resolving department:", err);
       return null;

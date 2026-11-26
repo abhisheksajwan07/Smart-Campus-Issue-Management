@@ -32,6 +32,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Copy compiled dist and database schemas
 COPY --from=builder /app/dist ./dist
+COPY drizzle ./drizzle
 COPY drizzle.config.ts ./
 
 EXPOSE 5000

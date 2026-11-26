@@ -1,0 +1,103 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="960" viewBox="0 0 1400 960">
+<defs>
+  <marker id="arrow-end" markerWidth="11" markerHeight="8" refX="10" refY="4" orient="auto">
+    <polygon points="0 0, 11 4, 0 8" fill="#1e293b"/>
+  </marker>
+  <marker id="arrow-start" markerWidth="11" markerHeight="8" refX="1" refY="4" orient="auto">
+    <polygon points="11 0, 0 4, 11 8" fill="#1e293b"/>
+  </marker>
+</defs>
+<rect x="0" y="0" width="1400" height="960" fill="#ffffff"/>
+<rect x="16" y="16" width="1368" height="928" rx="14" fill="#ffffff" stroke="#94a3b8" stroke-width="2"/>
+<rect x="40" y="34" width="1320" height="74" rx="10" fill="#0f172a" stroke="#0f172a" stroke-width="2"/>
+<text x="700.0" y="60.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="24" font-weight="bold" fill="#ffffff">SMART CAMPUS ISSUE MANAGEMENT — BACKEND BLOCK DIAGRAM</text>
+<text x="700.0" y="88.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14.5" font-weight="normal" fill="#cbd5e1">Layered Architecture: API Gateway, Core Business Services, ML Triage &amp; Data Storage</text>
+<rect x="420" y="134" width="560" height="86" rx="12" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2.5"/>
+<path d="M432,134 h536 a12,12 0 0 1 12,12 v30 h-560 v-30 a12,12 0 0 1 12,-12 z" fill="#1d4ed8"/>
+<line x1="420" y1="176" x2="980" y2="176" stroke="#1d4ed8" stroke-width="2"/>
+<text x="700.0" y="155.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="18" font-weight="bold" fill="#ffffff">Client Presentation Layer</text>
+<text x="700.0" y="198.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14.5" font-weight="normal" fill="#1e293b">React + Vite Web App  |  Admin &amp; Student Dashboards  |  Postman</text>
+<rect x="100" y="266" width="1200" height="108" rx="12" fill="#f8fafc" stroke="#334155" stroke-width="2.5"/>
+<path d="M112,266 h1176 a12,12 0 0 1 12,12 v30 h-1200 v-30 a12,12 0 0 1 12,-12 z" fill="#334155"/>
+<line x1="100" y1="308" x2="1300" y2="308" stroke="#334155" stroke-width="2"/>
+<text x="700.0" y="287.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="18" font-weight="bold" fill="#ffffff">Express.js API Gateway &amp; Security Layer</text>
+<text x="700.0" y="329.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14.5" font-weight="normal" fill="#1e293b">CORS &amp; Cookie Parser  |  Redis Rate Limiters  |  JWT &amp; Role Guards (RBAC)  |  Zod Schema Validation</text>
+<text x="700.0" y="352.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14.5" font-weight="normal" fill="#1e293b">Routes:  /api/auth   •   /api/complaints   •   /api/departments   •   /api/analytics   •   /api/admin   •   /api/upload</text>
+<path d="M 700,220 L 700,266" fill="none" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-end)"/>
+<rect x="710.2" y="231" width="163.6" height="24" rx="5" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+<text x="792" y="243.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="13" font-weight="bold" fill="#0f172a">HTTPS / REST / SSE</text>
+<rect x="56" y="412" width="1288" height="280" rx="14" fill="#f8fafc" stroke="#64748b" stroke-width="2" stroke-dasharray="8,5"/>
+<text x="487" y="434" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="13" font-weight="bold" fill="#334155">NODE.JS + TYPESCRIPT CORE APPLICATION LAYER</text>
+<rect x="82" y="456" width="384" height="214" rx="12" fill="#f0fdf4" stroke="#15803d" stroke-width="2.5"/>
+<path d="M94,456 h360 a12,12 0 0 1 12,12 v30 h-384 v-30 a12,12 0 0 1 12,-12 z" fill="#15803d"/>
+<line x1="82" y1="498" x2="466" y2="498" stroke="#15803d" stroke-width="2"/>
+<text x="274.0" y="477.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="17" font-weight="bold" fill="#ffffff">1. Auth &amp; Onboarding Module</text>
+<text x="274.0" y="538.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• GBU Roster Enrollment Verification</text>
+<text x="274.0" y="561.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• 6-Digit OTP + 60s Cooldown Control</text>
+<text x="274.0" y="584.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Brute-Force Login Lockout Guard</text>
+<text x="274.0" y="607.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Dual JWT (httpOnly Cookies + Refresh)</text>
+<text x="274.0" y="630.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Session Revocation &amp; Token Blacklist</text>
+<rect x="492" y="456" width="416" height="214" rx="12" fill="#eff6ff" stroke="#1d4ed8" stroke-width="2.5"/>
+<path d="M504,456 h392 a12,12 0 0 1 12,12 v30 h-416 v-30 a12,12 0 0 1 12,-12 z" fill="#1d4ed8"/>
+<line x1="492" y1="498" x2="908" y2="498" stroke="#1d4ed8" stroke-width="2"/>
+<text x="700.0" y="477.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="17" font-weight="bold" fill="#ffffff">2. Complaint &amp; AI Triage Engine</text>
+<text x="700.0" y="538.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Ticket Ingestion &amp; Image Uploads</text>
+<text x="700.0" y="561.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• AI Orchestrator (ML / Mock Fallback)</text>
+<text x="700.0" y="584.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Automated Department Routing</text>
+<text x="700.0" y="607.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Dynamic SLA Deadline (6h / 12h / 24h / 48h)</text>
+<text x="700.0" y="630.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Semantic Duplicate Search (pgvector)</text>
+<rect x="934" y="456" width="384" height="214" rx="12" fill="#faf5ff" stroke="#7e22ce" stroke-width="2.5"/>
+<path d="M946,456 h360 a12,12 0 0 1 12,12 v30 h-384 v-30 a12,12 0 0 1 12,-12 z" fill="#7e22ce"/>
+<line x1="934" y1="498" x2="1318" y2="498" stroke="#7e22ce" stroke-width="2"/>
+<text x="1126.0" y="477.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="17" font-weight="bold" fill="#ffffff">3. Triage, Override &amp; Analytics</text>
+<text x="1126.0" y="538.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Role-Scoped Ticket Query &amp; Filters</text>
+<text x="1126.0" y="561.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Status Lifecycle &amp; Audit Timeline</text>
+<text x="1126.0" y="584.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Human-in-the-Loop AI Override</text>
+<text x="1126.0" y="607.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Live SLA &amp; AI Acceptance Metrics</text>
+<text x="1126.0" y="630.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">• Department &amp; CSMS Roster Admin</text>
+<path d="M 274,374 L 274,456" fill="none" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-end)"/>
+<path d="M 700,374 L 700,456" fill="none" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-end)"/>
+<path d="M 1126,374 L 1126,456" fill="none" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-end)"/>
+<rect x="56" y="756" width="300" height="148" rx="12" fill="#fef2f2" stroke="#dc2626" stroke-width="2.5"/>
+<path d="M68,756 h276 a12,12 0 0 1 12,12 v30 h-300 v-30 a12,12 0 0 1 12,-12 z" fill="#dc2626"/>
+<line x1="56" y1="798" x2="356" y2="798" stroke="#dc2626" stroke-width="2"/>
+<text x="206.0" y="777.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="17" font-weight="bold" fill="#ffffff">Redis 7 Cache</text>
+<text x="206.0" y="816.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Rate Limit Counters</text>
+<text x="206.0" y="839.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">OTP &amp; Cooldown TTLs</text>
+<text x="206.0" y="862.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Refresh Tokens &amp; Blacklist</text>
+<text x="206.0" y="885.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Login Lockout State</text>
+<rect x="382" y="756" width="328" height="148" rx="12" fill="#f0f9ff" stroke="#0369a1" stroke-width="2.5"/>
+<path d="M394,756 h304 a12,12 0 0 1 12,12 v30 h-328 v-30 a12,12 0 0 1 12,-12 z" fill="#0369a1"/>
+<line x1="382" y1="798" x2="710" y2="798" stroke="#0369a1" stroke-width="2"/>
+<text x="546.0" y="777.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="17" font-weight="bold" fill="#ffffff">PostgreSQL + pgvector</text>
+<text x="546.0" y="816.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Users &amp; GBU Student Roster</text>
+<text x="546.0" y="839.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Departments &amp; Complaints</text>
+<text x="546.0" y="862.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">384-dim HNSW Vector Index</text>
+<text x="546.0" y="885.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Audit Timeline (Drizzle ORM)</text>
+<rect x="736" y="756" width="316" height="148" rx="12" fill="#eef2ff" stroke="#4338ca" stroke-width="2.5"/>
+<path d="M748,756 h292 a12,12 0 0 1 12,12 v30 h-316 v-30 a12,12 0 0 1 12,-12 z" fill="#4338ca"/>
+<line x1="736" y1="798" x2="1052" y2="798" stroke="#4338ca" stroke-width="2"/>
+<text x="894.0" y="777.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="17" font-weight="bold" fill="#ffffff">FastAPI ML Service</text>
+<text x="894.0" y="816.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Priority &amp; Category Models</text>
+<text x="894.0" y="839.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">12 Campus Issue Categories</text>
+<text x="894.0" y="862.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Suggested Resolution Action</text>
+<text x="894.0" y="885.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">384-dim Text Embeddings</text>
+<rect x="1078" y="756" width="266" height="148" rx="12" fill="#ecfeff" stroke="#0e7490" stroke-width="2.5"/>
+<path d="M1090,756 h242 a12,12 0 0 1 12,12 v30 h-266 v-30 a12,12 0 0 1 12,-12 z" fill="#0e7490"/>
+<line x1="1078" y1="798" x2="1344" y2="798" stroke="#0e7490" stroke-width="2"/>
+<text x="1211.0" y="777.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="17" font-weight="bold" fill="#ffffff">SSE &amp; Email Services</text>
+<text x="1211.0" y="816.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Live Dashboard SSE Push</text>
+<text x="1211.0" y="839.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">(NEW, STATUS, OVERRIDE)</text>
+<text x="1211.0" y="862.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Resend API OTP Emails</text>
+<text x="1211.0" y="885.5" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="14" font-weight="normal" fill="#1e293b">Local Photo Evidence Store</text>
+<path d="M 206,670 L 206,756" fill="none" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+<path d="M 424,670 L 424,756" fill="none" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+<path d="M 590,670 L 590,756" fill="none" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+<path d="M 830,670 L 830,756" fill="none" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+<rect x="768.7" y="686" width="122.6" height="24" rx="5" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+<text x="830" y="698.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="13" font-weight="bold" fill="#0f172a">POST /analyze</text>
+<path d="M 1016,670 L 1016,734 L 838,734 A 8,8 0 0 1 822,734 L 664,734 L 664,756" fill="none" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" marker-start="url(#arrow-start)" marker-end="url(#arrow-end)"/>
+<path d="M 1210,670 L 1210,756" fill="none" stroke="#1e293b" stroke-width="2.8" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#arrow-end)"/>
+<rect x="1214.7" y="702" width="122.6" height="24" rx="5" fill="#ffffff" stroke="#cbd5e1" stroke-width="1"/>
+<text x="1276" y="714.0" text-anchor="middle" dominant-baseline="central" font-family="DejaVu Sans, Noto Sans, sans-serif" font-size="13" font-weight="bold" fill="#0f172a">Events / Mail</text>
+</svg>

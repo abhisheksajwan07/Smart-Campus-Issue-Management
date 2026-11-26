@@ -56,9 +56,20 @@ export async function findSimilarComplaints(
     );
   }
 
+  // ── Guard: non-finite values or zero-norm vector (pgvector <=> returns NaN on zero vector) ──
+  let normSq = 0;
+  for (const val of embedding) {
+    if (!Number.isFinite(val)) return [];
+    normSq += val * val;
+  }
+  if (normSq <= 1e-12) return [];
+
+  const safeThreshold = Math.max(0, Math.min(1, Number.isFinite(threshold) ? threshold : DEFAULT_SIMILARITY_THRESHOLD));
+  const safeLimit = Math.max(1, Math.min(20, Number.isFinite(limit) ? Math.floor(limit) : 3));
+
   // pgvector: cosineDistance = 1 - cosineSimilarity
   // similarity >= threshold  ⟺  cosineDistance <= (1 - threshold)
-  const maxDistance = 1 - threshold;
+  const maxDistance = 1 - safeThreshold;
   const distanceExpr = cosineDistance(complaints.embedding, embedding);
   const similaritySql = sql<number>`(1 - (${distanceExpr}))`;
 
@@ -94,7 +105,7 @@ export async function findSimilarComplaints(
     .from(complaints)
     .where(and(...conditions))
     .orderBy(asc(distanceExpr))
-    .limit(limit);
+    .limit(safeLimit);
 
   return rows.map((row) => ({
     id: row.id,
