@@ -1,7 +1,6 @@
 databases:
   - name: smart-campus-db
     databaseName: smart_campus
-    user: postgres
     plan: free
     postgresMajorVersion: "16"
 
