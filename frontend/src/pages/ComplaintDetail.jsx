@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, MapPin, User, Building2, Copy } from "lucide-react";
 import { get, patch, fileUrl } from "../lib/api";
 import { useAsync } from "../hooks/useAsync";
@@ -83,13 +83,13 @@ function OverrideForm({ c, onDone }) {
     e.preventDefault();
     setBusy(true); setError(null); setSaved("");
     try {
-      await patch(`/complaints/${c.id}/override`, {
+      const res = await patch(`/complaints/${c.id}/override`, {
         category: category !== c.finalCategory ? category : undefined,
         priority: priority !== c.finalPriority ? priority : undefined,
         overrideReason: reason.trim(),
       });
       setReason(""); setSaved("Classification corrected. Department and deadline were recalculated.");
-      onDone();
+      onDone(res.data);
     } catch (err) { setError(err); } finally { setBusy(false); }
   };
 
@@ -118,6 +118,7 @@ function OverrideForm({ c, onDone }) {
 
 export default function ComplaintDetail() {
   const { id } = useParams();
+  const nav = useNavigate();
   const { user } = useAuth();
   const { tick, feed } = useLive();
   const ops = user.role !== "STUDENT";
@@ -133,7 +134,15 @@ export default function ComplaintDetail() {
   if (error) return (
     <div className="space-y-4">
       <Link to="/complaints" className="inline-flex items-center gap-2 text-sm text-ink-soft"><ArrowLeft size={16} /> Back to complaints</Link>
-      <ErrorNote error={error} onRetry={reload} />
+      {error.status === 403 ? (
+        <Card className="bg-sun-soft/60">
+          <p className="font-medium">This complaint belongs to another department.</p>
+          <p className="mt-1 text-sm text-ink-soft">Staff accounts can only view and manage complaints assigned to their own department.</p>
+          <Link to="/complaints" className="mt-4 inline-block rounded-full bg-ink px-4 py-2 text-xs font-medium text-white">Return to your queue</Link>
+        </Card>
+      ) : (
+        <ErrorNote error={error} onRetry={reload} />
+      )}
     </div>
   );
 
@@ -267,7 +276,20 @@ export default function ComplaintDetail() {
                 ))}
               </div>
               <div className="rounded-3xl bg-white/75 p-4 text-ink">
-                {tab === "status" ? <StatusForm c={c} onDone={() => reload(true)} /> : <OverrideForm c={c} onDone={() => reload(true)} />}
+                {tab === "status" ? (
+                  <StatusForm c={c} onDone={() => reload(true)} />
+                ) : (
+                  <OverrideForm
+                    c={c}
+                    onDone={(updated) => {
+                      if (user.role === "STAFF" && user.departmentId && updated?.assignedDepartmentId !== user.departmentId) {
+                        nav("/complaints", { replace: true });
+                      } else {
+                        reload(true);
+                      }
+                    }}
+                  />
+                )}
               </div>
             </Card>
           )}
