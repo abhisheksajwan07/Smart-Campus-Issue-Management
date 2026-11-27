@@ -5,6 +5,22 @@ import path from "path";
 dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true });
 dotenv.config({ path: path.resolve(process.cwd(), ".env") });
 
+function normalizeServiceUrl(raw: string | undefined, fallback: string): string {
+  const val = (raw || "").trim().replace(/\/$/, "");
+  if (!val) return fallback;
+  if (/^https?:\/\//i.test(val)) return val;
+  return val.includes(".onrender.com") ? `https://${val}` : `http://${val}`;
+}
+
+function normalizeOrigins(raw: string | undefined): string[] {
+  const list = (raw || "http://localhost:5173,http://localhost:3000")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => (/^https?:\/\//i.test(s) ? s.replace(/\/$/, "") : `https://${s.replace(/\/$/, "")}`));
+  return list;
+}
+
 export const ENV = {
   PORT: parseInt(process.env.PORT || "5000", 10) || 5000,
   NODE_ENV: process.env.NODE_ENV || "development",
@@ -22,11 +38,11 @@ export const ENV = {
   RESEND_API_KEY: process.env.RESEND_API_KEY || "",
   EMAIL_FROM: process.env.EMAIL_FROM || "Smart Campus <onboarding@resend.dev>",
 
-  FASTAPI_URL: process.env.FASTAPI_URL || "http://localhost:8000",
+  FASTAPI_URL: normalizeServiceUrl(process.env.FASTAPI_URL, "http://localhost:8000"),
   FASTAPI_TIMEOUT_MS: parseInt(process.env.FASTAPI_TIMEOUT_MS || "5000", 10) || 5000,
   USE_MOCK_AI: process.env.USE_MOCK_AI === "true",
   // Allowed CORS Origins & Cookie Configuration
-  CORS_ORIGIN: (process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:3000").split(","),
+  CORS_ORIGIN: normalizeOrigins(process.env.CORS_ORIGIN),
   COOKIE_DOMAIN: process.env.COOKIE_DOMAIN || undefined,
   COOKIE_SAMESITE: (process.env.COOKIE_SAMESITE as "lax" | "strict" | "none") || "lax",
   COOKIE_SECURE: process.env.COOKIE_SECURE,

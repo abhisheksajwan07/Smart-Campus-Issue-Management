@@ -1,6 +1,11 @@
 // Thin fetch wrapper around the Express backend.
 // Auth lives in httpOnly cookies, so every request sends credentials.
-export const API_ORIGIN = (import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+const rawApiOrigin = (import.meta.env.VITE_API_URL || "").trim().replace(/\/$/, "");
+export const API_ORIGIN = !rawApiOrigin
+  ? ""
+  : /^https?:\/\//i.test(rawApiOrigin)
+  ? rawApiOrigin
+  : `https://${rawApiOrigin}`;
 
 export class ApiError extends Error {
   constructor(message, status, data) {
