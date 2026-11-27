@@ -60,11 +60,17 @@ export class AuthController {
   private static getCookieBaseOptions(): CookieOptions {
     const isProd = ENV.NODE_ENV === "production";
     const sameSiteMode: "none" | "lax" | "strict" = (ENV.COOKIE_SAMESITE as any) || "lax";
+    const secureCookie =
+      sameSiteMode === "none"
+        ? true
+        : ENV.COOKIE_SECURE !== undefined
+        ? ENV.COOKIE_SECURE === "true"
+        : isProd;
 
     return {
       httpOnly: true,
       // Browsers mandate secure: true whenever sameSite is 'none'
-      secure: sameSiteMode === "none" ? true : isProd,
+      secure: secureCookie,
       sameSite: sameSiteMode,
       domain: ENV.COOKIE_DOMAIN || undefined,
       path: "/",

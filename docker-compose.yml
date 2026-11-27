@@ -42,7 +42,27 @@ services:
       - campus-network
 
   # -------------------------------------------------------------
-  # 3. NODE.JS + TYPESCRIPT MAIN BACKEND
+  # 3. PYTHON FASTAPI ML SERVICE
+  # -------------------------------------------------------------
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: smart-campus-ml
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - campus-network
+
+  # -------------------------------------------------------------
+  # 4. NODE.JS + TYPESCRIPT MAIN BACKEND
   # -------------------------------------------------------------
   backend:
     build:
@@ -56,9 +76,11 @@ services:
       redis:
         condition: service_healthy
       ml-service:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "5000:5000"
+    volumes:
+      - backend_uploads:/app/uploads
     environment:
       PORT: 5000
       NODE_ENV: production
@@ -70,49 +92,45 @@ services:
       JWT_REFRESH_SECRET: super_secret_smart_campus_refresh_key_2026
       JWT_REFRESH_EXPIRES_IN: 7d
       FASTAPI_URL: http://ml-service:8000
-      FASTAPI_TIMEOUT_MS: 5000
-      USE_MOCK_AI: "false" # Switch to 'false' once ml-service is ready
+      FASTAPI_TIMEOUT_MS: 10000
+      USE_MOCK_AI: "false"
       CORS_ORIGIN: http://localhost:5173,http://localhost:3000
+      COOKIE_SAMESITE: lax
+      COOKIE_SECURE: "false"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:5000/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
     networks:
       - campus-network
 
   # -------------------------------------------------------------
-  # 4. PYTHON FASTAPI ML SERVICE
+  # 5. FRONTEND REACT / VITE APP (Nginx + /api & /uploads Proxy)
   # -------------------------------------------------------------
-  ml-service:
+  frontend:
     build:
-      context: ./ml-service
+      context: ./frontend
       dockerfile: Dockerfile
-    container_name: smart-campus-ml
+    container_name: smart-campus-frontend
     restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
     ports:
-      - "8000:8000"
+      - "3000:80"
     networks:
       - campus-network
-
-  # -------------------------------------------------------------
-  # 5. FRONTEND REACT / VITE APP (Ready for Frontend Teammate)
-  # -------------------------------------------------------------
-  # frontend:
-  #   build:
-  #     context: ./frontend
-  #     dockerfile: Dockerfile
-  #   container_name: smart-campus-frontend
-  #   restart: unless-stopped
-  #   ports:
-  #     - "3000:3000"
-  #   environment:
-  #     VITE_BACKEND_URL: http://localhost:5000/api
-  #   networks:
-  #     - campus-network
 
 volumes:
   pgdata:
     driver: local
   redisdata:
     driver: local
+  backend_uploads:
+    driver: local
 
 networks:
   campus-network:
     driver: bridge
-

@@ -29,4 +29,5 @@ export const ENV = {
   CORS_ORIGIN: (process.env.CORS_ORIGIN || "http://localhost:5173,http://localhost:3000").split(","),
   COOKIE_DOMAIN: process.env.COOKIE_DOMAIN || undefined,
   COOKIE_SAMESITE: (process.env.COOKIE_SAMESITE as "lax" | "strict" | "none") || "lax",
+  COOKIE_SECURE: process.env.COOKIE_SECURE,
 };

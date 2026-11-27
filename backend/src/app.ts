@@ -9,6 +9,9 @@ import { errorHandler } from "./middleware/errorHandler";
 export function createApp(): Application {
   const app = express();
 
+  // Trust reverse proxy (Nginx / Azure / Render) so rate limiters see real client IPs
+  app.set("trust proxy", 1);
+
   // Middleware
   app.use(
     cors({

@@ -1,5 +1,6 @@
 import math
 import os
+import re
 from pathlib import Path
 from typing import List, Optional
 
@@ -8,6 +9,48 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from text_utils import clean_text
+
+CONCEPT_CLUSTERS = {
+    "FAN_ELECTRICAL": [
+        "fan", "ceiling", "buzzing", "humming", "spinning", "rotating", "halted", "regulator",
+        "sound", "noise", "blade", "tube", "light", "bulb", "flickering",
+    ],
+    "ELECTRICAL_HAZARD": [
+        "spark", "sparking", "socket", "plug", "switchboard", "switch", "shock",
+        "wire", "voltage", "mcb", "fuse", "short", "burning",
+    ],
+    "PLUMBING_LEAK": [
+        "leak", "leaking", "leakage", "pipe", "basin", "sink", "washroom",
+        "bathroom", "dripping", "drainage", "drain", "valve", "tap", "water", "flooding",
+    ],
+    "PLUMBING_FIXTURE": [
+        "geyser", "heating", "clogged", "flush", "button", "tank", "toilet", "dispenser", "filter",
+    ],
+    "WIFI_INTERNET": [
+        "wifi", "wi-fi", "internet", "network", "access", "connection", "router", "signal", "ssid",
+    ],
+    "ERP_PORTAL": [
+        "erp", "portal", "lms", "login", "server", "crash", "error", "credentials", "timeout", "500",
+    ],
+    "MESS_FOOD": [
+        "mess", "dinner", "lunch", "food", "chapatis", "cooked", "undercooked", "quality", "taste", "meal",
+    ],
+    "HOSTEL_HYGIENE": [
+        "dustbin", "trash", "cans", "corridor", "cleaning", "cleaned", "overflowing", "smell", "waste", "hostel",
+    ],
+    "ACADEMIC_EXAMS": [
+        "marksheet", "grade", "marks", "semester", "sem", "exam", "admit", "revaluation", "result", "score",
+    ],
+    "ADMIN_DOCS": [
+        "bonafide", "certificate", "passport", "application", "document", "migration", "transcript", "leave", "visa",
+    ],
+    "HOSTEL_HARDWARE": [
+        "lock", "key", "door", "jam", "turning", "window", "glass", "cracked", "frame", "room", "bed",
+    ],
+    "CAMPUS_SERVICES": [
+        "library", "book", "auditorium", "bus", "transport", "parking", "internship", "placement", "fest", "club", "gym",
+    ],
+}
 
 app = FastAPI(
     title="Smart Campus ML & NLP Service",
@@ -131,7 +174,7 @@ def generate_embedding(text: str) -> List[float]:
     """
     Generates a normalized 384-dimensional float vector
     for semantic similarity and duplicate detection.
-    Uses SBERT all-MiniLM-L6-v2 if installed, or deterministic normalized vector.
+    Uses SBERT all-MiniLM-L6-v2 if installed, or semantic concept + room + trigram projection.
     """
     if sbert_model is not None:
         try:
@@ -141,11 +184,46 @@ def generate_embedding(text: str) -> List[float]:
             pass
 
     dims = 384
-    # Deterministic semantic hash mapping
-    h = sum(ord(c) * (i + 1) for i, c in enumerate(text[:80]))
-    vec = [math.sin(h + i * 1.6180339887) for i in range(dims)]
-    norm = math.sqrt(sum(x * x for x in vec)) or 1.0
-    return [round(x / norm, 6) for x in vec]
+    vector = [0.0] * dims
+    clean = re.sub(r"[^a-z0-9\s]", " ", (text or "").lower())
+    words = [w for w in clean.split() if w]
+
+    # 1. Concept projections (dimensions 0 - 239)
+    for cluster_idx, keywords in enumerate(CONCEPT_CLUSTERS.values()):
+        match_count = sum(1 for w in words if w in keywords)
+        if match_count > 0:
+            start_dim = (cluster_idx * 20) % 240
+            for k in range(18):
+                angle = (cluster_idx + 1) * 1.6180339887 + k
+                vector[start_dim + k] += match_count * math.cos(angle)
+
+    # 2. Location & room identifier projection (dimensions 240 - 319)
+    for token in re.findall(r"\b[a-z]?\d{3,4}[a-z]?\b", clean):
+        digits = re.sub(r"\D", "", token)
+        numeric_part = int(digits) if digits else 0
+        for k in range(15):
+            vector[240 + ((numeric_part * 7 + k) % 80)] += 3.5
+
+    if "library" in clean:
+        for k in range(10):
+            vector[300 + k] += 2.5
+    if any(h in clean for h in ("tagore", "birsa", "mahamaya")):
+        for k in range(10):
+            vector[310 + k] += 2.5
+
+    # 3. Character trigram texture (dimensions 320 - 383)
+    for w in words:
+        for i in range(len(w) - 2):
+            trigram_hash = (ord(w[i]) * 31 + ord(w[i + 1]) * 7 + ord(w[i + 2])) % 64
+            vector[320 + trigram_hash] += 0.25
+
+    norm = math.sqrt(sum(x * x for x in vector))
+    if norm <= 1e-12:
+        h = sum(ord(c) * (i + 1) for i, c in enumerate(text[:80]))
+        vector = [math.sin(h + i * 1.6180339887) for i in range(dims)]
+        norm = math.sqrt(sum(x * x for x in vector)) or 1.0
+
+    return [round(x / norm, 6) for x in vector]
 
 
 @app.get("/health")
@@ -158,7 +236,6 @@ def health():
         "sbert_loaded": sbert_model is not None,
         "classes": [str(c) for c in model.classes_],
     }
-
 
 
 # Backward-compatible endpoint for teammate's ML testing
@@ -177,7 +254,10 @@ def predict(query: Query):
 # MAIN API CONTRACT FOR NODE.JS BACKEND
 @app.post("/analyze")
 def analyze(query: Query):
-    cleaned = clean_text(query.text)
+    # Strip trailing ". Location: ..." for classification/summary so location names
+    # do not bias category prediction, while keeping full query.text for embeddings.
+    issue_text = re.sub(r"\.\s*Location:\s*.*$", "", query.text, flags=re.IGNORECASE | re.DOTALL).strip() or query.text
+    cleaned = clean_text(issue_text)
 
     # 1. Priority Prediction from teammate's trained model
     features = vectorizer.transform([cleaned])
@@ -187,10 +267,10 @@ def analyze(query: Query):
     priority_confidence = round(float(probs[idx]), 4)
 
     # 2. Category Detection
-    category_val, cat_confidence = detect_category(query.text)
+    category_val, cat_confidence = detect_category(issue_text)
 
     # 3. Dynamic Summary & Suggested Resolution Action
-    summary = query.text if len(query.text) <= 100 else f"{query.text[:97]}..."
+    summary = issue_text if len(issue_text) <= 100 else f"{issue_text[:97]}..."
     suggested_action = generate_suggested_action(category_val, raw_priority)
 
     # 4. 384-dim Embedding Vector for Duplicate Search

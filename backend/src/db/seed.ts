@@ -5,7 +5,8 @@ import { AiService } from "../services/aiService";
 import { RoutingService } from "../services/routingService";
 import { SlaService } from "../services/slaService";
 
-async function seed() {
+export async function seed(options?: { closePool?: boolean }) {
+  const closePool = options?.closePool ?? true;
   console.log("=================================================");
   console.log("🌱 SEEDING GBU SMART CAMPUS COMPLAINT SYSTEM");
   console.log("=================================================");
@@ -346,11 +347,15 @@ async function seed() {
   console.log("  Enrollment No: 23/SOBT/019 (Rohan Verma, School of Biotech)");
   console.log("  Default OTP:   123456 (or check terminal log)");
   console.log("=================================================");
-  await pool.end();
+  if (closePool) {
+    await pool.end();
+  }
 }
 
-seed().catch((err) => {
-  console.error("Seeding failed:", err);
-  pool.end();
-  process.exit(1);
-});
+if (require.main === module) {
+  seed({ closePool: true }).catch((err) => {
+    console.error("Seeding failed:", err);
+    pool.end();
+    process.exit(1);
+  });
+}
