@@ -30,6 +30,10 @@ function StatusForm({ c, onDone }) {
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState("");
 
+  useEffect(() => {
+    setStatus(c.status);
+  }, [c.status]);
+
   const submit = async (e) => {
     e.preventDefault();
     setBusy(true); setError(null); setSaved("");
@@ -67,6 +71,11 @@ function OverrideForm({ c, onDone }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState("");
+
+  useEffect(() => {
+    setCategory(c.finalCategory);
+    setPriority(c.finalPriority);
+  }, [c.finalCategory, c.finalPriority]);
   const changed = category !== c.finalCategory || priority !== c.finalPriority;
   const cats = CATEGORIES.includes(c.finalCategory) ? CATEGORIES : [c.finalCategory, ...CATEGORIES];
 
@@ -157,7 +166,7 @@ export default function ComplaintDetail() {
             <p className="whitespace-pre-line leading-relaxed text-ink-soft">{c.description}</p>
             <dl className="mt-6 grid gap-4 text-sm sm:grid-cols-3">
               <div className="flex gap-2"><MapPin size={16} className="mt-0.5 text-ink-mute" /><div><dt className="text-ink-mute">Location</dt><dd>{c.location}</dd></div></div>
-              <div className="flex gap-2"><Building2 size={16} className="mt-0.5 text-ink-mute" /><div><dt className="text-ink-mute">Department</dt><dd>{c.departmentName || "Not routed yet"}</dd></div></div>
+              <div className="flex gap-2"><Building2 size={16} className="mt-0.5 text-ink-mute" /><div><dt className="text-ink-mute">Department</dt><dd>{c.departmentName || "Not routed yet"}{c.departmentCode ? ` (${c.departmentCode})` : ""}</dd></div></div>
               {ops && <div className="flex gap-2"><User size={16} className="mt-0.5 text-ink-mute" /><div><dt className="text-ink-mute">Reported by</dt><dd>{c.studentName}<br /><span className="text-ink-mute">{c.studentEmail}</span></dd></div></div>}
             </dl>
             {img && <img src={img} alt="Photo attached to the complaint" className="mt-6 max-h-96 rounded-3xl object-cover" />}
@@ -197,18 +206,29 @@ export default function ComplaintDetail() {
             <Card>
               <CardHead title="Possible duplicates" />
               <ul className="space-y-2">
-                {c.similarComplaints.map((s) => (
-                  <li key={s.id}>
-                    <Link to={`/complaints/${s.id}`} className="flex items-center gap-4 rounded-2xl bg-white/70 px-4 py-3 hover:bg-white">
+                {c.similarComplaints.map((s) => {
+                  const inner = (
+                    <>
                       <span className="text-2xl font-light tabular-nums">{Math.round(s.similarity * 100)}<span className="text-sm text-ink-mute">%</span></span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-sm font-medium">{s.title}</span>
-                        <span className="block truncate text-xs text-ink-mute">{s.ticketNumber} · {s.location}</span>
+                        <span className="block truncate text-xs text-ink-mute">
+                          {s.ticketNumber} · {s.location}{s.canView === false ? " · Reported by another student" : ""}
+                        </span>
                       </span>
                       <StatusBadge value={s.status} />
-                    </Link>
-                  </li>
-                ))}
+                    </>
+                  );
+                  return (
+                    <li key={s.id}>
+                      {s.canView === false ? (
+                        <div className="flex items-center gap-4 rounded-2xl bg-white/60 px-4 py-3">{inner}</div>
+                      ) : (
+                        <Link to={`/complaints/${s.id}`} className="flex items-center gap-4 rounded-2xl bg-white/70 px-4 py-3 hover:bg-white">{inner}</Link>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </Card>
           )}

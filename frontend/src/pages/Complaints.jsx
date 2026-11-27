@@ -12,6 +12,7 @@ export default function Complaints() {
   const { user } = useAuth();
   const { tick } = useLive();
   const ops = user.role !== "STUDENT";
+  const isAdmin = user.role === "ADMIN";
   const [params, setParams] = useSearchParams();
   const [search, setSearch] = useState(params.get("search") || "");
 
@@ -19,10 +20,12 @@ export default function Complaints() {
     status: params.get("status") || "",
     priority: params.get("priority") || "",
     category: params.get("category") || "",
-    departmentId: params.get("departmentId") || "",
+    departmentId: isAdmin ? params.get("departmentId") || "" : "",
     search: params.get("search") || "",
+    open: params.get("open") || "",
   };
-  const openOnly = params.get("open") === "1";
+  const openOnly = filters.open === "1";
+  const hasFilters = Boolean(filters.status || filters.priority || filters.category || filters.departmentId || filters.search || openOnly);
 
   const set = (k, v) => {
     const next = new URLSearchParams(params);
@@ -31,6 +34,10 @@ export default function Complaints() {
     setParams(next, { replace: true });
   };
 
+  useEffect(() => {
+    setSearch(filters.search);
+  }, [filters.search]);
+
   // debounce search box into URL
   useEffect(() => {
     const t = setTimeout(() => search !== filters.search && set("search", search.trim()), 350);
@@ -38,10 +45,11 @@ export default function Complaints() {
   }, [search]); // eslint-disable-line
 
   const depts = useAsync(() => (ops ? get("/departments").then((r) => r.data) : Promise.resolve([])), [ops]);
+  const staffDept = user.role === "STAFF" ? (depts.data || []).find((d) => d.id === user.departmentId) : null;
   const { data, loading, error, reload } = useAsync(() => get(`/complaints${qs(filters)}`).then((r) => r.data), [params.toString()]);
   useEffect(() => { if (tick) reload(true); }, [tick]); // eslint-disable-line
 
-  const list = (data || []).filter((c) => !openOnly || !isClosed(c.status));
+  const list = data || [];
   const statusValue = openOnly ? "open" : filters.status;
 
   return (
@@ -49,7 +57,10 @@ export default function Complaints() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-4xl font-light tracking-tight">{ops ? "Complaints" : "My complaints"}</h1>
-          <p className="mt-1 text-ink-mute">{loading ? " " : `${list.length} ${list.length === 1 ? "complaint" : "complaints"}`}</p>
+          <p className="mt-1 text-ink-mute">
+            {loading ? " " : `${list.length} ${list.length === 1 ? "complaint" : "complaints"}`}
+            {staffDept ? ` · ${staffDept.code} (${staffDept.name})` : ""}
+          </p>
         </div>
         <Link to="/report" className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-white hover:bg-ink-soft">
           <Plus size={16} /> Report issue
@@ -81,7 +92,7 @@ export default function Complaints() {
             <option value="">Any category</option>
             {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
           </select>
-          {ops && (
+          {isAdmin && (
             <select aria-label="Department" className="field" value={filters.departmentId} onChange={(e) => set("departmentId", e.target.value)}>
               <option value="">Any department</option>
               {(depts.data || []).map((d) => <option key={d.id} value={d.id}>{d.code} · {d.name}</option>)}
@@ -91,7 +102,15 @@ export default function Complaints() {
       </div>
 
       {loading ? <Spinner /> : error ? <ErrorNote error={error} onRetry={reload} /> : list.length === 0 ? (
-        <Empty title="No complaints match these filters">Clear a filter or try a different search.</Empty>
+        <Empty title={hasFilters ? "No complaints match these filters" : "No complaints yet"}>
+          {hasFilters ? (
+            <button type="button" onClick={() => setParams(new URLSearchParams(), { replace: true })} className="font-medium text-ink underline underline-offset-4">
+              Clear all filters
+            </button>
+          ) : (
+            <Link to="/report" className="font-medium text-ink underline underline-offset-4">Report an issue</Link>
+          )}
+        </Empty>
       ) : (
         <Card className="p-2 sm:p-3">
           <div className="hidden grid-cols-[1fr_12rem_6rem_7rem_6rem] gap-4 px-4 py-2 text-xs text-ink-mute lg:grid">
@@ -107,7 +126,7 @@ export default function Complaints() {
                       {c.isAiOverridden && <span title="Classification corrected by staff" className="text-ink-mute"><Sparkles size={13} /></span>}
                     </span>
                     <span className="block truncate text-xs text-ink-mute">
-                      {c.ticketNumber} · {c.location}{ops && c.studentName ? ` · ${c.studentName}` : ""} · {timeAgo(c.createdAt)}
+                      {c.ticketNumber} · {c.location}{c.departmentName ? ` · ${c.departmentName}` : ""}{ops && c.studentName ? ` · ${c.studentName}` : ""} · {timeAgo(c.createdAt)}
                     </span>
                   </span>
                   <span className="hidden truncate text-sm text-ink-soft lg:block">{c.finalCategory}</span>

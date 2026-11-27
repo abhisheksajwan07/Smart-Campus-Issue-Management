@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { API_ORIGIN, refreshSession } from "../lib/api";
+import { API_ORIGIN, hasStoredSession, markSession, refreshSession } from "../lib/api";
 
 const EVENTS = ["NEW_COMPLAINT", "STATUS_UPDATED", "AI_OVERRIDDEN"];
 
@@ -33,8 +33,13 @@ export function useLiveEvents(enabled, onEvent) {
       es.onerror = async () => {
         setConnected(false);
         es.close();
-        if (closed) return;
-        await refreshSession(); // access cookie may have expired
+        if (closed || !hasStoredSession()) return;
+        const ok = await refreshSession(); // access cookie may have expired
+        if (!ok) {
+          markSession(false);
+          window.dispatchEvent(new Event("auth:expired"));
+          return;
+        }
         retry = setTimeout(open, 5000);
       };
     };

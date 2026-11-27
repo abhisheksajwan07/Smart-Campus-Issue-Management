@@ -3,7 +3,7 @@ import { Response } from "express";
 import { z } from "zod";
 import { db } from "../config/database";
 import { complaints, complaintTimeline, departments, users } from "../db/schema";
-import { eq, desc, and, or, ilike, sql } from "drizzle-orm";
+import { eq, desc, and, or, ilike, sql, notInArray } from "drizzle-orm";
 import { AuthenticatedRequest, PriorityLevel, ComplaintStatus } from "../types";
 import { AiService } from "../services/aiService";
 import { SlaService } from "../services/slaService";
@@ -33,6 +33,12 @@ export const createComplaintSchema = z.object({
   imageUrl: z.string().nullable().optional(),
 });
 
+export const checkDuplicatesSchema = z.object({
+  title: z.string().trim().min(3, "Title must be at least 3 characters"),
+  description: z.string().trim().min(5, "Description must be at least 5 characters"),
+  location: z.string().trim().optional().default(""),
+});
+
 export const updateStatusSchema = z.object({
   status: z.enum(["SUBMITTED", "IN_PROGRESS", "RESOLVED", "REJECTED", "ESCALATED"]),
   note: z.string().optional(),
@@ -43,6 +49,40 @@ export const overrideAiSchema = z.object({
   priority: z.enum(["CRITICAL", "HIGH", "MEDIUM", "LOW"]).optional(),
   overrideReason: z.string().min(3, "Please provide an explanation for overriding the AI result"),
 });
+
+async function getDepartmentInfo(departmentId: string | null) {
+  if (!departmentId) return { departmentName: null, departmentCode: null };
+  const [deptRow] = await db
+    .select({ name: departments.name, code: departments.code })
+    .from(departments)
+    .where(eq(departments.id, departmentId))
+    .limit(1);
+  return {
+    departmentName: deptRow?.name ?? null,
+    departmentCode: deptRow?.code ?? null,
+  };
+}
+
+async function findDuplicatesSafely(
+  embedding: number[] | undefined,
+  excludeId: string | undefined,
+  viewer?: AuthenticatedRequest["user"]
+): Promise<SimilarComplaintMatch[]> {
+  try {
+    if (embedding && embedding.length > 0) {
+      return await findSimilarComplaints(
+        embedding,
+        excludeId,
+        DEFAULT_SIMILARITY_THRESHOLD,
+        3,
+        { viewer }
+      );
+    }
+  } catch (simErr) {
+    console.warn("Non-critical: Similarity search failed, continuing without duplicate suggestions:", simErr);
+  }
+  return [];
+}
 
 export class ComplaintController {
   /**
@@ -136,28 +176,29 @@ export class ComplaintController {
         return complaint;
       });
 
-      // 7. Find Semantically Similar / Duplicate Suggestions (Non-critical enrichment)
-      let similarComplaints: SimilarComplaintMatch[] = [];
-      try {
-        if (aiResult.embedding && aiResult.embedding.length > 0) {
-          similarComplaints = await findSimilarComplaints(
-            aiResult.embedding,
-            newComplaint.id,
-            DEFAULT_SIMILARITY_THRESHOLD,
-            3
-          );
-        }
-      } catch (simErr) {
-        console.warn("Non-critical: Similarity search failed, continuing without duplicate suggestions:", simErr);
-      }
+      // 7. Lookup Department Metadata + Find Semantically Similar / Duplicate Suggestions
+      const { departmentName, departmentCode } = await getDepartmentInfo(assignedDepartmentId);
+      const similarComplaints = await findDuplicatesSafely(
+        aiResult.embedding,
+        newComplaint.id,
+        currentUser
+      );
 
-      const safeComplaint = stripEmbedding(newComplaint);
+      const safeComplaint = {
+        ...stripEmbedding(newComplaint),
+        departmentName,
+        departmentCode,
+      };
 
-      // 8. Broadcast Real-Time SSE Event to All Connected Admin Dashboards
-      SSEService.broadcast("NEW_COMPLAINT", {
-        complaint: safeComplaint,
-        similarComplaints,
-      });
+      // 8. Broadcast Real-Time SSE Event to Eligible Connected Dashboards
+      SSEService.broadcast(
+        "NEW_COMPLAINT",
+        {
+          complaint: safeComplaint,
+          similarComplaints,
+        },
+        { studentId: currentUser.userId, departmentId: assignedDepartmentId }
+      );
 
       res.status(201).json({
         success: true,
@@ -169,6 +210,8 @@ export class ComplaintController {
             predictedPriority,
             categoryConfidence: aiResult.category.confidence,
             priorityConfidence: aiResult.priority.confidence,
+            departmentName,
+            departmentCode,
             summary: aiResult.summary,
             suggestedAction: aiResult.suggestedAction,
           },
@@ -185,6 +228,58 @@ export class ComplaintController {
   }
 
   /**
+   * Live AI preview + semantic duplicate detection before submitting a complaint
+   */
+  static async checkDuplicates(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: "Unauthorized" });
+        return;
+      }
+
+      const { title, description, location } = req.body;
+      const combinedText = `${title}. ${description}${location ? `. Location: ${location}` : ""}`;
+
+      const aiResult = await AiService.analyzeComplaint({
+        text: combinedText,
+        location: location || undefined,
+      });
+
+      const predictedCategory = aiResult.category.value;
+      const predictedPriority = aiResult.priority.value;
+      const assignedDepartmentId = await RoutingService.resolveDepartmentId(predictedCategory);
+      const slaHours = SlaService.getSlaHours(predictedPriority);
+      const { departmentName, departmentCode } = await getDepartmentInfo(assignedDepartmentId);
+      const similarComplaints = await findDuplicatesSafely(
+        aiResult.embedding,
+        undefined,
+        req.user
+      );
+
+      res.status(200).json({
+        success: true,
+        data: {
+          aiPreview: {
+            predictedCategory,
+            predictedPriority,
+            categoryConfidence: aiResult.category.confidence,
+            priorityConfidence: aiResult.priority.confidence,
+            departmentName,
+            departmentCode,
+            slaHours,
+            summary: aiResult.summary,
+            suggestedAction: aiResult.suggestedAction,
+          },
+          similarComplaints,
+        },
+      });
+    } catch (err) {
+      console.error("Check duplicates error:", err);
+      res.status(500).json({ success: false, message: "Failed to analyze complaint draft" });
+    }
+  }
+
+  /**
    * List complaints with filtering, search, and role isolation
    */
   static async getComplaints(req: AuthenticatedRequest, res: Response): Promise<void> {
@@ -194,7 +289,7 @@ export class ComplaintController {
         return;
       }
 
-      const { status, priority, category, departmentId, search } = req.query;
+      const { status, priority, category, departmentId, search, open } = req.query;
 
       const conditions = [];
 
@@ -210,6 +305,9 @@ export class ComplaintController {
         }
       }
 
+      if (open === "1" || open === "true") {
+        conditions.push(notInArray(complaints.status, ["RESOLVED", "REJECTED"]));
+      }
       if (status) {
         const normalizedStatus = String(status).trim().toUpperCase() as ComplaintStatus;
         if (!VALID_STATUSES.includes(normalizedStatus)) {
@@ -408,7 +506,8 @@ export class ComplaintController {
             complaint.embedding,
             complaint.id,
             DEFAULT_SIMILARITY_THRESHOLD,
-            3
+            3,
+            { viewer: req.user }
           );
         }
       } catch (simErr) {
@@ -504,13 +603,17 @@ export class ComplaintController {
       const safeUpdated = stripEmbedding(updated);
 
       // Broadcast Real-Time SSE Event
-      SSEService.broadcast("STATUS_UPDATED", {
-        complaintId: id,
-        ticketNumber: safeUpdated.ticketNumber,
-        status: safeUpdated.status,
-        resolvedAt: safeUpdated.resolvedAt,
-        note: note || `Status transitioned to "${status}"`,
-      });
+      SSEService.broadcast(
+        "STATUS_UPDATED",
+        {
+          complaintId: id,
+          ticketNumber: safeUpdated.ticketNumber,
+          status: safeUpdated.status,
+          resolvedAt: safeUpdated.resolvedAt,
+          note: note || `Status transitioned to "${status}"`,
+        },
+        { studentId: existing.studentId, departmentId: existing.assignedDepartmentId }
+      );
 
       res.status(200).json({
         success: true,
@@ -609,16 +712,24 @@ export class ComplaintController {
       const safeUpdated = stripEmbedding(updated);
 
       // Broadcast Real-Time SSE Event
-      SSEService.broadcast("AI_OVERRIDDEN", {
-        complaintId: id,
-        ticketNumber: safeUpdated.ticketNumber,
-        finalCategory: safeUpdated.finalCategory,
-        finalPriority: safeUpdated.finalPriority,
-        isAiOverridden: true,
-        slaHours: safeUpdated.slaHours,
-        slaDeadlineAt: safeUpdated.slaDeadlineAt,
-        overrideReason,
-      });
+      SSEService.broadcast(
+        "AI_OVERRIDDEN",
+        {
+          complaintId: id,
+          ticketNumber: safeUpdated.ticketNumber,
+          finalCategory: safeUpdated.finalCategory,
+          finalPriority: safeUpdated.finalPriority,
+          isAiOverridden: true,
+          slaHours: safeUpdated.slaHours,
+          slaDeadlineAt: safeUpdated.slaDeadlineAt,
+          overrideReason,
+        },
+        {
+          studentId: existing.studentId,
+          departmentId: assignedDepartmentId,
+          previousDepartmentId: existing.assignedDepartmentId,
+        }
+      );
 
       res.status(200).json({
         success: true,
@@ -650,7 +761,7 @@ export class ComplaintController {
       })}\n\n`
     );
 
-    SSEService.addClient(res);
+    SSEService.addClient(res, req.user);
 
     req.on("close", () => {
       SSEService.removeClient(res);

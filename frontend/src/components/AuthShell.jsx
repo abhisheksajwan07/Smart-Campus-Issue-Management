@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { get } from "../lib/api";
+
 /** Split layout for login / activation screens */
 export default function AuthShell({ title, intro, children, aside }) {
   return (
@@ -19,33 +22,43 @@ export default function AuthShell({ title, intro, children, aside }) {
   );
 }
 
-/** The aside: a calm illustration of what the product does */
+/** Live campus department status fetched from GET /api/departments */
 export function AuthAside() {
-  const rows = [
-    { t: "Fan not working, B-204", c: "Electrical Maintenance", p: "MEDIUM", done: true },
-    { t: "Water leakage near washroom", c: "Plumbing & Sanitation", p: "HIGH", done: true },
-    { t: "Wi-Fi down in Library block", c: "IT & Digital Services", p: "HIGH", done: false },
-    { t: "Exposed wire, corridor C", c: "Electrical Maintenance", p: "CRITICAL", done: false },
-  ];
+  const [depts, setDepts] = useState(null);
+
+  useEffect(() => {
+    let active = true;
+    get("/departments")
+      .then((r) => { if (active) setDepts(r.data || []); })
+      .catch(() => { if (active) setDepts([]); });
+    return () => { active = false; };
+  }, []);
+
   return (
     <>
       <div className="absolute -right-24 -top-24 h-80 w-80 rounded-full border-[28px] border-white/60" aria-hidden />
       <div className="relative">
         <p className="max-w-xs text-2xl font-light leading-snug">
-          Report it once. It reaches the right department with a deadline attached.
+          Report it once. AI routes it to the right department with a live SLA deadline.
         </p>
-        <ul className="mt-8 space-y-2">
-          {rows.map((r) => (
-            <li key={r.t} className="flex items-center gap-3 rounded-2xl bg-white/50 px-4 py-3">
-              <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${r.p === "CRITICAL" ? "bg-alarm" : r.done ? "bg-ink" : "bg-ink/25"}`} />
-              <div className="min-w-0 flex-1">
-                <p className={`truncate text-sm ${r.done ? "text-ink-mute line-through" : ""}`}>{r.t}</p>
-                <p className="truncate text-xs text-ink-mute">{r.c}</p>
-              </div>
-              <span className="text-xs text-ink-mute">{r.p[0] + r.p.slice(1).toLowerCase()}</span>
-            </li>
-          ))}
-        </ul>
+        {depts === null ? (
+          <p className="mt-8 text-sm text-ink-mute">Connecting to campus service desk…</p>
+        ) : depts.length === 0 ? (
+          <p className="mt-8 text-sm text-ink-mute">Ready to route student complaints across campus divisions.</p>
+        ) : (
+          <ul className="mt-8 space-y-2">
+            {depts.slice(0, 5).map((d) => (
+              <li key={d.id} className="flex items-center gap-3 rounded-2xl bg-white/50 px-4 py-3">
+                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${d.openComplaints > 0 ? "bg-sun-deep" : "bg-leaf"}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium">{d.name}</p>
+                  <p className="truncate text-xs text-ink-mute">{d.code}{d.headName ? ` · ${d.headName}` : ""}</p>
+                </div>
+                <span className="text-xs tabular-nums text-ink-mute">{d.openComplaints} open</span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
     </>
   );

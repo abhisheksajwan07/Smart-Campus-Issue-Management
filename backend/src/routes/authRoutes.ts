@@ -7,6 +7,7 @@ import {
   resendOtpSchema,
   registerStudentSchema,
   refreshTokenSchema,
+  updateProfileSchema,
 } from "../controllers/authController";
 import { validateBody } from "../middleware/validate";
 import { authenticateToken } from "../middleware/auth";
@@ -53,7 +54,6 @@ router.post(
 
 router.post(
   "/refresh-token",
-  authLimiter,
   validateBody(refreshTokenSchema),
   AuthController.refreshToken,
 );
@@ -65,5 +65,6 @@ router.post(
 );
 
 router.get("/me", authenticateToken, AuthController.getMe);
+router.patch("/me", authenticateToken, validateBody(updateProfileSchema), AuthController.updateMe);
 
 export default router;

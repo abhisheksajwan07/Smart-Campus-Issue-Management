@@ -1,8 +1,8 @@
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Upload, Search, X } from "lucide-react";
-import { get, post } from "../lib/api";
+import { get, post, qs } from "../lib/api";
 import { useAsync } from "../hooks/useAsync";
-import { Card, Spinner, ErrorNote, Button, Empty } from "../components/ui";
+import { Card, Spinner, ErrorNote, Button, Empty, Segmented } from "../components/ui";
 
 const COLUMNS = ["enrollmentNo", "fullName", "school", "program", "hostelBlock", "roomNo", "registeredEmail"];
 
@@ -82,14 +82,21 @@ function Importer({ onDone }) {
 export default function Roster() {
   const [showImport, setShowImport] = useState(false);
   const [q, setQ] = useState("");
-  const { data, loading, error, reload } = useAsync(() => get("/admin/roster").then((r) => r.data), []);
+  const [debouncedQ, setDebouncedQ] = useState("");
+  const [isClaimed, setIsClaimed] = useState("");
 
-  // Backend currently ignores ?search, so filter here as well.
-  const list = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    return (data || []).filter((r) => !s || [r.enrollmentNo, r.fullName, r.registeredEmail, r.school].some((v) => v?.toLowerCase().includes(s)));
-  }, [data, q]);
-  const claimed = (data || []).filter((r) => r.isClaimed).length;
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  const { data, loading, error, reload } = useAsync(
+    () => get(`/admin/roster${qs({ search: debouncedQ, isClaimed })}`).then((r) => r.data),
+    [debouncedQ, isClaimed]
+  );
+
+  const list = data || [];
+  const claimed = list.filter((r) => r.isClaimed).length;
 
   return (
     <div className="space-y-6">
@@ -108,11 +115,15 @@ export default function Roster() {
 
       {showImport && <Importer onDone={() => reload(true)} />}
 
-      <label className="relative block max-w-md">
-        <span className="sr-only">Search roster</span>
-        <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink-mute" />
-        <input className="field pl-10" placeholder="Search name, enrollment or email" value={q} onChange={(e) => setQ(e.target.value)} />
-      </label>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="relative block w-full max-w-md">
+          <span className="sr-only">Search roster</span>
+          <Search size={16} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-ink-mute" />
+          <input className="field pl-10" placeholder="Search name, enrollment or email" value={q} onChange={(e) => setQ(e.target.value)} />
+        </label>
+        <Segmented label="Account status" value={isClaimed} onChange={setIsClaimed}
+          options={[{ value: "", label: "All" }, { value: "true", label: "Active" }, { value: "false", label: "Unclaimed" }]} />
+      </div>
 
       {loading ? <Spinner /> : error ? <ErrorNote error={error} onRetry={reload} /> : list.length === 0 ? (
         <Empty title={q ? "No students match that search" : "The roster is empty"}>{!q && "Import a CSV export to get started."}</Empty>

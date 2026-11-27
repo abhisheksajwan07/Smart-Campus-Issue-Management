@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { RosterController, bulkRosterSchema } from "../controllers/rosterController";
+import { AdminUserController, createTeamUserSchema } from "../controllers/adminUserController";
 import { authenticateToken, requireRoles } from "../middleware/auth";
 import { validateBody } from "../middleware/validate";
 
@@ -17,5 +18,13 @@ router.post(
 
 // List student roster entries
 router.get("/roster", RosterController.listRoster);
+
+// List and create team members (ADMIN / STAFF) without disrupting admin cookies
+router.get("/users", AdminUserController.listTeamUsers);
+router.post(
+  "/users",
+  validateBody(createTeamUserSchema),
+  AdminUserController.createTeamUser
+);
 
 export default router;

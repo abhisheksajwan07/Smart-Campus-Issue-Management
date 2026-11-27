@@ -44,6 +44,11 @@ export const refreshTokenSchema = z.object({
   refreshToken: z.string().optional(),
 });
 
+export const updateProfileSchema = z.object({
+  phone: z.string().trim().max(32, "Phone number is too long").optional().nullable(),
+  name: z.string().trim().min(2, "Name must be at least 2 characters").optional(),
+});
+
 function maskEmail(email: string): string {
   const parts = email.split("@");
   if (parts.length !== 2) return email;
@@ -606,6 +611,61 @@ export class AuthController {
   }
 
   /**
+   * Update Current User Profile (phone for all users; name for non-students)
+   */
+  static async updateMe(req: AuthenticatedRequest, res: Response): Promise<void> {
+    try {
+      if (!req.user) {
+        res.status(401).json({ success: false, message: "Unauthorized" });
+        return;
+      }
+
+      const { phone, name } = req.body;
+      const updates: { phone?: string | null; name?: string; updatedAt: Date } = {
+        updatedAt: new Date(),
+      };
+      if (phone !== undefined) {
+        updates.phone = phone ? String(phone).trim() : null;
+      }
+      if (name && req.user.role !== "STUDENT") {
+        updates.name = String(name).trim();
+      }
+
+      const [updated] = await db
+        .update(users)
+        .set(updates)
+        .where(eq(users.id, req.user.userId))
+        .returning({
+          id: users.id,
+          name: users.name,
+          email: users.email,
+          role: users.role,
+          enrollmentNo: users.enrollmentNo,
+          school: users.school,
+          hostelBlock: users.hostelBlock,
+          roomNo: users.roomNo,
+          departmentId: users.departmentId,
+          phone: users.phone,
+          createdAt: users.createdAt,
+        });
+
+      if (!updated) {
+        res.status(404).json({ success: false, message: "User not found" });
+        return;
+      }
+
+      res.status(200).json({
+        success: true,
+        message: "Profile updated successfully",
+        data: updated,
+      });
+    } catch (err) {
+      console.error("UpdateMe error:", err);
+      res.status(500).json({ success: false, message: "Failed to update profile" });
+    }
+  }
+
+  /**
    * JWT Refresh Token Rotation Endpoint
    * Accepts long-lived Refresh Token, verifies against Redis, and issues a fresh pair.
    */
@@ -632,9 +692,14 @@ export class AuthController {
         return;
       }
 
-      // Check if refresh token is in Redis and matches active session
-      const storedToken = await redis.get(`rt:${decoded.userId}`);
-      if (!storedToken || storedToken !== refreshToken) {
+      // Check if refresh token is in Redis and matches active session (with 15s grace window for concurrent tab/SSE refreshes)
+      const [storedToken, prevToken] = await Promise.all([
+        redis.get(`rt:${decoded.userId}`),
+        redis.get(`rt_prev:${decoded.userId}`),
+      ]);
+      const matchesActive = storedToken && storedToken === refreshToken;
+      const matchesGrace = prevToken && prevToken === refreshToken;
+      if (!matchesActive && !matchesGrace) {
         res.status(401).json({
           success: false,
           message: "Refresh token has been revoked or expired. Please log in again.",
@@ -676,6 +741,11 @@ export class AuthController {
         roomNo: user.roomNo,
       };
 
+      // Keep previous refresh token valid for 15s so concurrent requests/tabs don't race-revoke each other
+      if (matchesActive) {
+        await redis.setex(`rt_prev:${decoded.userId}`, 15, refreshToken);
+      }
+
       // Token Rotation: issue brand new Access Token and Refresh Token
       const tokens = await AuthController.issueTokens(tokenPayload);
 
@@ -701,7 +771,7 @@ export class AuthController {
     try {
       if (req.user) {
         // 1. Delete refresh token from Redis (revokes session renewal)
-        await redis.del(`rt:${req.user.userId}`);
+        await redis.del(`rt:${req.user.userId}`, `rt_prev:${req.user.userId}`);
       }
 
       if (req.token) {

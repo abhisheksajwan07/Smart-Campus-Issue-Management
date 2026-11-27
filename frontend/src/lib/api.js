@@ -18,6 +18,18 @@ export class ApiError extends Error {
 
 const NO_REFRESH = ["/auth/login", "/auth/refresh-token", "/auth/logout", "/auth/register",
   "/auth/register-student", "/auth/verify-enrollment", "/auth/resend-otp"];
+const SESSION_KEY = "campus_has_session";
+
+export function markSession(active) {
+  try {
+    if (active) localStorage.setItem(SESSION_KEY, "1");
+    else localStorage.removeItem(SESSION_KEY);
+  } catch { /* ignore storage errors */ }
+}
+
+export function hasStoredSession() {
+  try { return localStorage.getItem(SESSION_KEY) === "1"; } catch { return false; }
+}
 
 let refreshing = null;
 
@@ -34,8 +46,14 @@ function send(path, { method = "GET", body, form } = {}) {
 export function refreshSession() {
   if (!refreshing) {
     refreshing = send("/auth/refresh-token", { method: "POST", body: {} })
-      .then((r) => r.ok)
-      .catch(() => false)
+      .then((r) => {
+        if (!r.ok) markSession(false);
+        return r.ok;
+      })
+      .catch(() => {
+        markSession(false);
+        return false;
+      })
       .finally(() => setTimeout(() => (refreshing = null), 0));
   }
   return refreshing;
@@ -49,9 +67,16 @@ export async function api(path, options = {}, canRetry = true) {
     throw new ApiError("Can't reach the server. Check that the backend is running on port 5000.", 0);
   }
 
-  if (res.status === 401 && canRetry && !NO_REFRESH.includes(path)) {
+  const shouldTryRefresh =
+    res.status === 401 &&
+    canRetry &&
+    !NO_REFRESH.includes(path) &&
+    (path !== "/auth/me" || hasStoredSession());
+
+  if (shouldTryRefresh) {
     const ok = await refreshSession();
     if (ok) return api(path, options, false);
+    markSession(false);
     window.dispatchEvent(new Event("auth:expired"));
   }
 

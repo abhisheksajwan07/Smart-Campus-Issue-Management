@@ -77,7 +77,7 @@ export async function seed(options?: { closePool?: boolean }) {
       program: "B.Tech Computer Science & Engineering",
       hostelBlock: "Birsa Munda Hostel",
       roomNo: "B-204",
-      registeredEmail: "abhishek.sajwan@gbu.ac.in",
+      registeredEmail: "abhisheksajwandev07@gmail.com",
       isClaimed: true, // Pre-activated for demo
     },
     {
@@ -122,6 +122,17 @@ export async function seed(options?: { closePool?: boolean }) {
       registeredEmail: "sneha.rao@gbu.ac.in",
       isClaimed: false,
     },
+    {
+      // Unclaimed profile for testing live OTP onboarding with Gmail
+      enrollmentNo: "22/ICS/099",
+      fullName: "Abhishek Sajwan (Test)",
+      school: "School of ICT (SOICT)",
+      program: "B.Tech Computer Science & Engineering",
+      hostelBlock: "Birsa Munda Hostel",
+      roomNo: "B-205",
+      registeredEmail: "abhisheksajwan2004@gmail.com",
+      isClaimed: false,
+    },
   ];
 
   await db
@@ -152,7 +163,7 @@ export async function seed(options?: { closePool?: boolean }) {
     },
     {
       name: "Abhishek Sajwan",
-      email: "abhishek.sajwan@gbu.ac.in",
+      email: "abhisheksajwandev07@gmail.com",
       passwordHash,
       role: "STUDENT" as const,
       enrollmentNo: "22/ICS/045",
@@ -192,7 +203,7 @@ export async function seed(options?: { closePool?: boolean }) {
 
   const allUsers = await db.select().from(users);
   const adminUser = allUsers.find((u) => u.role === "ADMIN")!;
-  const abhishekUser = allUsers.find((u) => u.email === "abhishek.sajwan@gbu.ac.in")!;
+  const abhishekUser = allUsers.find((u) => u.email === "abhisheksajwandev07@gmail.com")!;
   const priyaUser = allUsers.find((u) => u.email === "priya.patel@gbu.ac.in")!;
 
   // 4. Seed Realistic GBU Campus Complaints
@@ -340,7 +351,7 @@ export async function seed(options?: { closePool?: boolean }) {
   console.log("📋 Verified GBU Test Credentials:");
   console.log("  Admin:     admin@gbu.ac.in        / Password@123");
   console.log("  Staff:     staff.elec@gbu.ac.in   / Password@123");
-  console.log("  Student 1: abhishek.sajwan@gbu.ac.in (22/ICS/045) / Password@123");
+  console.log("  Student 1: abhisheksajwandev07@gmail.com (22/ICS/045) / Password@123");
   console.log("  Student 2: priya.patel@gbu.ac.in     (23/SOE/034) / Password@123");
   console.log("-------------------------------------------------");
   console.log("💡 Unclaimed GBU Enrollment for Testing Onboarding:");

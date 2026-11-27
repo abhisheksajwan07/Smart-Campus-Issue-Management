@@ -1,11 +1,25 @@
-import { Request, Response } from "express";
+import { Response } from "express";
+import { eq } from "drizzle-orm";
 import { db } from "../config/database";
 import { complaints, departments } from "../db/schema";
 import { SlaService } from "../services/slaService";
+import { AuthenticatedRequest } from "../types";
 
 export class AnalyticsController {
-  static async getDashboardMetrics(_req: Request, res: Response): Promise<void> {
+  static async getDashboardMetrics(req: AuthenticatedRequest, res: Response): Promise<void> {
     try {
+      const isStaff = req.user?.role === "STAFF";
+      const staffDeptId = req.user?.departmentId || null;
+
+      // Scope metrics to the staff member's department (or direct assignment)
+      const whereClause = isStaff
+        ? staffDeptId
+          ? eq(complaints.assignedDepartmentId, staffDeptId)
+          : req.user?.userId
+          ? eq(complaints.assignedStaffId, req.user.userId)
+          : undefined
+        : undefined;
+
       // 1. Overall counts
       const allComplaints = await db
         .select({
@@ -21,7 +35,8 @@ export class AnalyticsController {
           isSlaBreached: complaints.isSlaBreached,
           departmentId: complaints.assignedDepartmentId,
         })
-        .from(complaints);
+        .from(complaints)
+        .where(whereClause);
 
       const total = allComplaints.length;
       let submitted = 0;
@@ -67,7 +82,9 @@ export class AnalyticsController {
         : 100;
 
       // Department Workload Distribution
-      const allDepts = await db.select().from(departments);
+      const allDepts = isStaff && staffDeptId
+        ? await db.select().from(departments).where(eq(departments.id, staffDeptId))
+        : await db.select().from(departments);
       const deptCounts: Record<string, number> = {};
       for (const item of allComplaints) {
         if (item.departmentId) {

@@ -27,8 +27,10 @@ export default function App() {
           <Route path="complaints" element={<Complaints />} />
           <Route path="complaints/:id" element={<ComplaintDetail />} />
           <Route path="report" element={<NewComplaint />} />
-          <Route path="departments" element={<Departments />} />
           <Route path="profile" element={<Profile />} />
+          <Route element={<RequireAuth roles={["ADMIN", "STAFF"]} />}>
+            <Route path="departments" element={<Departments />} />
+          </Route>
           <Route element={<RequireAuth roles={["ADMIN"]} />}>
             <Route path="roster" element={<Roster />} />
             <Route path="team" element={<Team />} />

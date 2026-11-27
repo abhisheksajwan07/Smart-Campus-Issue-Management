@@ -2,6 +2,7 @@ import { Router } from "express";
 import {
   ComplaintController,
   createComplaintSchema,
+  checkDuplicatesSchema,
   updateStatusSchema,
   overrideAiSchema,
 } from "../controllers/complaintController";
@@ -16,6 +17,9 @@ router.use(authenticateToken);
 
 // 1. Submit complaint (Student, Staff, or Admin) — rate limited
 router.post("/", complaintCreateLimiter, validateBody(createComplaintSchema), ComplaintController.createComplaint);
+
+// 1b. Live AI preview + duplicate suggestion check before submission
+router.post("/check-duplicates", validateBody(checkDuplicatesSchema), ComplaintController.checkDuplicates);
 
 // 2. Real-Time Server-Sent Events (SSE) Stream
 router.get("/stream", ComplaintController.streamEvents);

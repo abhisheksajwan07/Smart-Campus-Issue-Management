@@ -13,8 +13,8 @@ function navFor(role) {
     { to: "/", label: "Dashboard", end: true },
     { to: "/complaints", label: role === "STUDENT" ? "My complaints" : "Complaints" },
     { to: "/report", label: "Report issue" },
-    { to: "/departments", label: "Departments" },
   ];
+  if (role === "ADMIN" || role === "STAFF") items.push({ to: "/departments", label: "Departments" });
   if (role === "ADMIN") items.push({ to: "/roster", label: "Student roster" }, { to: "/team", label: "Team" });
   return items;
 }
@@ -85,7 +85,7 @@ export default function Layout() {
   const [menu, setMenu] = useState(false);
   const [tick, setTick] = useState(0);
   const isOps = user.role === "ADMIN" || user.role === "STAFF";
-  const { connected, feed } = useLiveEvents(isOps, () => setTick((t) => t + 1));
+  const { connected, feed } = useLiveEvents(true, () => setTick((t) => t + 1));
   const items = navFor(user.role);
 
   useEffect(() => setMenu(false), [loc.pathname]);
@@ -107,7 +107,7 @@ export default function Layout() {
             </nav>
 
             <div className="ml-auto flex items-center gap-2 lg:ml-0">
-              {isOps && <LiveBell feed={feed} connected={connected} />}
+              <LiveBell feed={feed} connected={connected} />
               <Link to="/profile" aria-label="Your profile"
                 className="grid h-10 w-10 place-items-center rounded-full bg-white/80 text-xs font-semibold hover:bg-white">
                 {initials(user.name) || <UserRound size={17} />}

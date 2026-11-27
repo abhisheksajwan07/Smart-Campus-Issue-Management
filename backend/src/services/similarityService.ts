@@ -1,5 +1,6 @@
 import { db } from "../config/database";
 import { complaints } from "../db/schema";
+import { TokenPayload } from "../types";
 import { cosineDistance, sql, ne, and, isNotNull, lte, asc } from "drizzle-orm";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -11,6 +12,7 @@ export interface SimilarComplaintMatch {
   location: string;
   status: string;
   similarity: number;
+  canView?: boolean;
 }
 
 /**
@@ -43,6 +45,8 @@ export async function findSimilarComplaints(
   options?: {
     /** If true (default), skip RESOLVED and REJECTED complaints from results */
     excludeInactive?: boolean;
+    /** Optional viewer to determine whether the match can be opened directly */
+    viewer?: TokenPayload;
   }
 ): Promise<SimilarComplaintMatch[]> {
   // ── Guard: empty embedding → no results (not an error) ──
@@ -100,6 +104,8 @@ export async function findSimilarComplaints(
       title: complaints.title,
       location: complaints.location,
       status: complaints.status,
+      studentId: complaints.studentId,
+      assignedDepartmentId: complaints.assignedDepartmentId,
       similarity: similaritySql,
     })
     .from(complaints)
@@ -107,12 +113,22 @@ export async function findSimilarComplaints(
     .orderBy(asc(distanceExpr))
     .limit(safeLimit);
 
-  return rows.map((row) => ({
-    id: row.id,
-    ticketNumber: row.ticketNumber,
-    title: row.title,
-    location: row.location,
-    status: row.status,
-    similarity: Math.round(Number(row.similarity) * 1e4) / 1e4,
-  }));
+  const viewer = options?.viewer;
+  return rows.map((row) => {
+    let canView = false;
+    if (viewer) {
+      if (viewer.role === "ADMIN") canView = true;
+      else if (viewer.role === "STAFF") canView = !viewer.departmentId || row.assignedDepartmentId === viewer.departmentId;
+      else if (viewer.role === "STUDENT") canView = row.studentId === viewer.userId;
+    }
+    return {
+      id: row.id,
+      ticketNumber: row.ticketNumber,
+      title: row.title,
+      location: row.location,
+      status: row.status,
+      similarity: Math.round(Number(row.similarity) * 1e4) / 1e4,
+      ...(viewer ? { canView } : {}),
+    };
+  });
 }

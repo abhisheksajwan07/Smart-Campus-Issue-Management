@@ -158,10 +158,11 @@ function OpsDashboard({ user }) {
           <h1 className="text-4xl font-light tracking-tight sm:text-5xl">{greeting()}, {firstName(user.name)}</h1>
           <div className="mt-6">
             <Pipeline total={s.totalComplaints} segments={[
-              { label: "New", value: s.activeComplaints - inProgress, cls: "bg-ink text-white" },
+              { label: "New", value: Math.max(0, s.activeComplaints - inProgress), cls: "bg-ink text-white" },
               { label: "In progress", value: inProgress, cls: "bg-sun" },
               { label: "Resolved", value: s.resolvedComplaints, cls: "hatch bg-white/60" },
               { label: "Escalated", value: s.escalatedComplaints, cls: "border border-ink/40 bg-white/40" },
+              { label: "Rejected", value: s.rejectedComplaints, cls: "bg-paper text-ink-mute" },
             ]} />
           </div>
         </div>
@@ -207,12 +208,14 @@ function OpsDashboard({ user }) {
           <CardHead title="Department workload" to="/departments" />
           <ul className="space-y-3">
             {depts.map((d) => (
-              <li key={d.id} className="grid grid-cols-[4.5rem_1fr_2rem] items-center gap-3 text-sm">
-                <span className="font-medium">{d.code}</span>
-                <div className="h-7 rounded-full bg-white/80">
-                  <div className="flex h-full items-center rounded-full bg-sun px-3 text-xs" style={{ width: `${Math.max(6, (d.complaintsCount / deptMax) * 100)}%` }} />
-                </div>
-                <span className="text-right tabular-nums text-ink-mute">{d.complaintsCount}</span>
+              <li key={d.id}>
+                <Link to={`/complaints?departmentId=${d.id}`} className="grid grid-cols-[4.5rem_1fr_2rem] items-center gap-3 rounded-xl py-0.5 text-sm hover:opacity-85">
+                  <span className="font-medium">{d.code}</span>
+                  <div className="h-7 rounded-full bg-white/80">
+                    <div className="flex h-full items-center rounded-full bg-sun px-3 text-xs" style={{ width: `${Math.max(6, (d.complaintsCount / deptMax) * 100)}%` }} />
+                  </div>
+                  <span className="text-right tabular-nums text-ink-mute">{d.complaintsCount}</span>
+                </Link>
               </li>
             ))}
           </ul>
@@ -223,7 +226,10 @@ function OpsDashboard({ user }) {
 }
 
 function StudentDashboard({ user }) {
+  const { tick } = useLive();
   const { data, loading, error, reload } = useAsync(() => get("/complaints").then((r) => r.data), []);
+  useEffect(() => { if (tick) reload(true); }, [tick]); // eslint-disable-line
+
   const stats = useMemo(() => {
     const list = data || [];
     return {
@@ -232,6 +238,8 @@ function StudentDashboard({ user }) {
       resolved: list.filter((c) => c.status === "RESOLVED").length,
       inProgress: list.filter((c) => c.status === "IN_PROGRESS").length,
       submitted: list.filter((c) => c.status === "SUBMITTED").length,
+      escalated: list.filter((c) => c.status === "ESCALATED").length,
+      rejected: list.filter((c) => c.status === "REJECTED").length,
     };
   }, [data]);
 
@@ -248,7 +256,9 @@ function StudentDashboard({ user }) {
             <Pipeline total={stats.total} segments={[
               { label: "Waiting", value: stats.submitted, cls: "bg-ink text-white" },
               { label: "Being fixed", value: stats.inProgress, cls: "bg-sun" },
+              { label: "Escalated", value: stats.escalated, cls: "border border-ink/40 bg-white/40" },
               { label: "Resolved", value: stats.resolved, cls: "hatch bg-white/60" },
+              { label: "Rejected", value: stats.rejected, cls: "bg-paper text-ink-mute" },
             ]} />
           </div>
         </div>
@@ -312,7 +322,9 @@ function StudentDashboard({ user }) {
                   <Link to={`/complaints/${c.id}`} className="grid grid-cols-[1fr_auto] items-center gap-3 py-3 sm:grid-cols-[1fr_10rem_6rem_6rem]">
                     <span className="min-w-0">
                       <span className="block truncate font-medium">{c.title}</span>
-                      <span className="block truncate text-xs text-ink-mute">{c.ticketNumber} · {timeAgo(c.createdAt)}</span>
+                      <span className="block truncate text-xs text-ink-mute">
+                        {c.ticketNumber}{c.departmentName ? ` · ${c.departmentName}` : ""} · {timeAgo(c.createdAt)}
+                      </span>
                     </span>
                     <span className="hidden truncate text-sm text-ink-soft sm:block">{c.finalCategory}</span>
                     <span className="hidden sm:block"><PriorityBadge value={c.finalPriority} /></span>
