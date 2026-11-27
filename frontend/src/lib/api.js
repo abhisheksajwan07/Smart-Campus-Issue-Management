@@ -37,6 +37,7 @@ export function hasStoredSession() {
 }
 
 let refreshing = null;
+let lastRefreshStatus = "ok"; // "ok" | "unauthorized" | "transient"
 
 function send(path, { method = "GET", body, form } = {}) {
   const opts = { method, credentials: "include", headers: {} };
@@ -52,16 +53,31 @@ export function refreshSession() {
   if (!refreshing) {
     refreshing = send("/auth/refresh-token", { method: "POST", body: {} })
       .then((r) => {
-        if (!r.ok) markSession(false);
-        return r.ok;
+        if (r.ok) {
+          lastRefreshStatus = "ok";
+          return true;
+        }
+        // Only treat explicit 400/401 as expired/revoked session (not 5xx/429 transient errors)
+        if (r.status === 400 || r.status === 401) {
+          lastRefreshStatus = "unauthorized";
+          markSession(false);
+        } else {
+          lastRefreshStatus = "transient";
+        }
+        return false;
       })
       .catch(() => {
-        markSession(false);
+        // Network offline or laptop waking from sleep — do NOT wipe session
+        lastRefreshStatus = "transient";
         return false;
       })
       .finally(() => setTimeout(() => (refreshing = null), 0));
   }
   return refreshing;
+}
+
+export function wasRefreshUnauthorized() {
+  return lastRefreshStatus === "unauthorized";
 }
 
 export async function api(path, options = {}, canRetry = true) {
@@ -81,8 +97,10 @@ export async function api(path, options = {}, canRetry = true) {
   if (shouldTryRefresh) {
     const ok = await refreshSession();
     if (ok) return api(path, options, false);
-    markSession(false);
-    window.dispatchEvent(new Event("auth:expired"));
+    if (wasRefreshUnauthorized()) {
+      markSession(false);
+      window.dispatchEvent(new Event("auth:expired"));
+    }
   }
 
   const data = await res.json().catch(() => ({}));

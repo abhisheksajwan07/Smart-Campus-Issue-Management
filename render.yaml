@@ -56,7 +56,7 @@ services:
       - key: JWT_ACCESS_SECRET
         generateValue: true
       - key: JWT_ACCESS_EXPIRES_IN
-        value: 15m
+        value: 2h
       - key: JWT_REFRESH_SECRET
         generateValue: true
       - key: JWT_REFRESH_EXPIRES_IN

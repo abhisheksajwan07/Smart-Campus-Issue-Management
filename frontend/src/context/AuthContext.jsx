@@ -32,13 +32,25 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener("auth:expired", onExpired);
   }, [loadMe]);
 
-  // Proactively refresh the 15m access cookie every 12 minutes while signed in
+  // Proactively refresh the 2h access cookie every 45m and when returning to an idle/background tab
   useEffect(() => {
     if (!user) return;
-    const id = setInterval(() => {
+    let lastCheck = Date.now();
+    const renew = () => {
+      lastCheck = Date.now();
       refreshSession().catch(() => {});
-    }, 12 * 60 * 1000);
-    return () => clearInterval(id);
+    };
+    const id = setInterval(renew, 45 * 60 * 1000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && Date.now() - lastCheck > 15 * 60 * 1000) {
+        renew();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
   }, [user]);
 
   const login = async (email, password) => {

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { API_ORIGIN, hasStoredSession, markSession, refreshSession } from "../lib/api";
+import { API_ORIGIN, hasStoredSession, markSession, refreshSession, wasRefreshUnauthorized } from "../lib/api";
 
 const EVENTS = ["NEW_COMPLAINT", "STATUS_UPDATED", "AI_OVERRIDDEN"];
 
@@ -35,7 +35,7 @@ export function useLiveEvents(enabled, onEvent) {
         es.close();
         if (closed || !hasStoredSession()) return;
         const ok = await refreshSession(); // access cookie may have expired
-        if (!ok) {
+        if (!ok && wasRefreshUnauthorized()) {
           markSession(false);
           window.dispatchEvent(new Event("auth:expired"));
           return;

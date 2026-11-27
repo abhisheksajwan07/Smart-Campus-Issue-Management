@@ -49,6 +49,15 @@ export const updateProfileSchema = z.object({
   name: z.string().trim().min(2, "Name must be at least 2 characters").optional(),
 });
 
+function parseDurationMs(expr: string, fallbackMs: number): number {
+  const m = String(expr || "").trim().match(/^(\d+)\s*([smhd])$/i);
+  if (!m) return fallbackMs;
+  const n = Number(m[1]);
+  const unit = m[2].toLowerCase();
+  const mult = unit === "s" ? 1000 : unit === "m" ? 60000 : unit === "h" ? 3600000 : 86400000;
+  return n * mult;
+}
+
 function maskEmail(email: string): string {
   const parts = email.split("@");
   if (parts.length !== 2) return email;
@@ -91,17 +100,17 @@ export class AuthController {
   public static setAuthCookies(res: Response, tokens: { accessToken: string; refreshToken?: string }): void {
     const baseOptions = AuthController.getCookieBaseOptions();
 
-    // Set primary access token cookie (httpOnly) - 15 minutes
+    // Set primary access token cookie (httpOnly) matching JWT_ACCESS_EXPIRES_IN
     res.cookie("token", tokens.accessToken, {
       ...baseOptions,
-      maxAge: 15 * 60 * 1000, // 15 mins
+      maxAge: parseDurationMs(ENV.JWT_ACCESS_EXPIRES_IN, 2 * 60 * 60 * 1000),
     });
 
     if (tokens.refreshToken) {
-      // Set long-lived refresh token cookie (httpOnly) - 7 days
+      // Set long-lived refresh token cookie (httpOnly) matching JWT_REFRESH_EXPIRES_IN
       res.cookie("refreshToken", tokens.refreshToken, {
         ...baseOptions,
-        maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+        maxAge: parseDurationMs(ENV.JWT_REFRESH_EXPIRES_IN, 7 * 24 * 60 * 60 * 1000),
       });
     }
   }
@@ -741,9 +750,9 @@ export class AuthController {
         roomNo: user.roomNo,
       };
 
-      // Keep previous refresh token valid for 15s so concurrent requests/tabs don't race-revoke each other
+      // Keep previous refresh token valid for 60s so concurrent/waking tabs don't race-revoke each other
       if (matchesActive) {
-        await redis.setex(`rt_prev:${decoded.userId}`, 15, refreshToken);
+        await redis.setex(`rt_prev:${decoded.userId}`, 60, refreshToken);
       }
 
       // Token Rotation: issue brand new Access Token and Refresh Token
