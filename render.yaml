@@ -47,7 +47,7 @@ services:
         fromService:
           type: web
           name: smart-campus-ml
-          property: host
+          envVarKey: RENDER_EXTERNAL_URL
       - key: FASTAPI_TIMEOUT_MS
         value: "20000"
       - key: USE_MOCK_AI
@@ -70,7 +70,7 @@ services:
         fromService:
           type: web
           name: smart-campus-frontend
-          property: host
+          envVarKey: RENDER_EXTERNAL_URL
       - key: COOKIE_SAMESITE
         value: none
       - key: COOKIE_SECURE
@@ -92,4 +92,4 @@ services:
         fromService:
           type: web
           name: smart-campus-backend
-          property: host
+          envVarKey: RENDER_EXTERNAL_URL
